@@ -1,0 +1,5 @@
+
+/.idea
+/SolMuseum.egg-info
+*.pyc
+SolMuseum/_version.py
