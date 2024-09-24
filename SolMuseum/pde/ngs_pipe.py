@@ -160,7 +160,7 @@ def ngs_pipe(p: Var,
                                                      S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                              S * p[1] - va * q[1]))
 
-        case 'weno':
+        case 'weno3':
             rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, M - 1)
             artifact['q_' + pipe_name + '_eqn1'] = Ode(f'weno3-q{pipe_name}_1',
                                                        rhs,
@@ -212,4 +212,6 @@ def ngs_pipe(p: Var,
             artifact['q_' + pipe_name + 'bd2'] = Eqn(q.name + 'bd2',
                                                      S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                              S * p[1] - va * q[1]))
+        case _:
+            raise NotImplementedError(f'No such method: {method}!')
     return artifact
