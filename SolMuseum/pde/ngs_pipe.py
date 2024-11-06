@@ -132,13 +132,20 @@ def ngs_pipe(p: Var,
             rhs = cha(p_, q_, p_0, q_0, '-', lam, va, S, D, dx)
             artifact[f'cha_{pipe_name}_neg'] = Eqn(f'cha_{pipe_name}_neg', rhs)
         case 'kt1':
-            rhs = mol_tvd1_q_eqn_rhs0([p[0:M - 1], p[1:M], p[2:M + 1]],
-                                      [q[0:M - 1], q[1:M], q[2:M + 1]],
-                                      S,
-                                      va,
-                                      lam,
-                                      D,
-                                      dx)
+            # rhs = mol_tvd1_q_eqn_rhs0([p[0:M - 1], p[1:M], p[2:M + 1]],
+            #                           [q[0:M - 1], q[1:M], q[2:M + 1]],
+            #                           S,
+            #                           va,
+            #                           lam,
+            #                           D,
+            #                           dx)
+            from .kt1.kt1_pipe import kt1_ode0
+            rhs = kt1_ode0(p[0:M - 1], p[1:M], p[2:M + 1], q[0:M - 1], q[1:M], q[2:M + 1],
+                           S,
+                           va,
+                           lam,
+                           D,
+                           dx)
             artifact['q_' + pipe_name + '_eqn'] = Ode(f'kt1-q{pipe_name}',
                                                       rhs,
                                                       q[1:M])
@@ -161,10 +168,18 @@ def ngs_pipe(p: Var,
                                                              S * p[1] - va * q[1]))
 
         case 'weno3':
-            rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, M - 1)
+
+            # rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, M - 1)
+
+            from .weno3.weno_pipe import weno_odep, weno_odeq
+            rhs = weno_odeq(p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1],
+                            q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1],
+                            S, va, lam, D, dx)
+
             artifact['q_' + pipe_name + '_eqn1'] = Ode(f'weno3-q{pipe_name}_1',
                                                        rhs,
                                                        q[2:M - 1])
+
             rhs = mol_tvd1_q_eqn_rhs1([p[0], p[1], p[2]],
                                       [q[0], q[1], q[2]],
                                       S,
@@ -185,10 +200,16 @@ def ngs_pipe(p: Var,
             artifact['q_' + pipe_name + '_eqn3'] = Ode(f'weno3-q{pipe_name}_3',
                                                        rhs,
                                                        q[M - 1])
-            rhs = mol_weno_p_eqn_rhs(p, q, S, va, dx, 2, M - 1)
+
+            # rhs = mol_weno_p_eqn_rhs(p, q, S, va, dx, 2, M - 1)
+            rhs = weno_odep(p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1],
+                            q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1],
+                            S, va, lam, D, dx)
+
             artifact['p_' + pipe_name + '_eqn1'] = Ode(f'weno3-p{pipe_name}_1',
                                                        rhs,
                                                        p[2:M - 1])
+
             rhs = mol_tvd1_p_eqn_rhs1([p[0], p[1], p[2]],
                                       [q[0], q[1], q[2]],
                                       S,

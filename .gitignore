@@ -4,3 +4,4 @@
 *.pyc
 SolMuseum/_version.py
 /docs/build
+/SolMuseum/num_api/pde/__pycache__
