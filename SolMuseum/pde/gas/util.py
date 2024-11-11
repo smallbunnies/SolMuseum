@@ -540,3 +540,80 @@ def mol_tvd1_q_eqn_rhs0(p_list, q_list, S, va, lam, D, dx):
     qm1, q0, qp1 = q_list
     return -S * (pp1 - pm1) / (2 * dx) + va * (qp1 - 2 * q0 + qm1) / (2 * dx) - lam * va ** 2 * q0 * Abs(q0) / (
             2 * D * S * p0)
+
+
+from Solverz import minmod
+
+
+def ux(theta, um1, u, up1, dx):
+    return minmod(theta * (u - um1) / dx, (up1 - um1) / (2 * dx), theta * (up1 - u) / dx)
+
+
+def mol_tvd2_p_eqn_rhs(p_list, q_list, S, va, dx):
+
+    pm2, pm1, p0, pp1, pp2 = p_list
+    qm2, qm1, q0, qp1, qp2 = q_list
+
+    theta = Param('theta', 1)
+
+    def f(p, q):
+        return va ** 2 / S * q
+
+    def Source(p, q):
+        return Integer(0)
+
+    # u_{j+1/2}^+
+    p1 = pp1 - dx / 2 * ux(theta, p0, pp1, pp2, dx)
+    q1 = qp1 - dx / 2 * ux(theta, q0, qp1, qp2, dx)
+
+    # u_{j+1/2}^-
+    p2 = p0 + dx / 2 * ux(theta, pm1, p0, pp1, dx)
+    q2 = q0 + dx / 2 * ux(theta, qm1, q0, qp1, dx)
+
+    # u_{j-1/2}^+
+    p3 = p0 - dx / 2 * ux(theta, pm1, p0, pp1, dx)
+    q3 = q0 - dx / 2 * ux(theta, qm1, q0, qp1, dx)
+
+    # u_{j-1/2}^-
+    p4 = pm1 + dx / 2 * ux(theta, pm2, pm1, p0, dx)
+    q4 = qm1 + dx / 2 * ux(theta, qm2, qm1, q0, dx)
+
+    Hp = (f(p1, q1) + f(p2, q2)) / 2 - va / 2 * (p1 - p2)
+    Hm = (f(p3, q3) + f(p4, q4)) / 2 - va / 2 * (p3 - p4)
+
+    return -(Hp - Hm) / dx + Source(p0, q0)
+
+
+def mol_tvd2_q_eqn_rhs(p_list, q_list, S, va, lam, D, dx):
+
+    pm2, pm1, p0, pp1, pp2 = p_list
+    qm2, qm1, q0, qp1, qp2 = q_list
+
+    theta = Param('theta', 1)
+
+    def f(p, q):
+        return S * p
+
+    def Source(p, q):
+        return -lam * va ** 2 * q * Abs(q) / (2 * D * S * p)
+
+    # u_{j+1/2}^+
+    p1 = pp1 - dx / 2 * ux(theta, p0, pp1, pp2, dx)
+    q1 = qp1 - dx / 2 * ux(theta, q0, qp1, qp2, dx)
+
+    # u_{j+1/2}^-
+    p2 = p0 + dx / 2 * ux(theta, pm1, p0, pp1, dx)
+    q2 = q0 + dx / 2 * ux(theta, qm1, q0, qp1, dx)
+
+    # u_{j-1/2}^+
+    p3 = p0 - dx / 2 * ux(theta, pm1, p0, pp1, dx)
+    q3 = q0 - dx / 2 * ux(theta, qm1, q0, qp1, dx)
+
+    # u_{j-1/2}^-
+    p4 = pm1 + dx / 2 * ux(theta, pm2, pm1, p0, dx)
+    q4 = qm1 + dx / 2 * ux(theta, qm2, qm1, q0, dx)
+
+    Hp = (f(p1, q1) + f(p2, q2)) / 2 - va / 2 * (q1 - q2)
+    Hm = (f(p3, q3) + f(p4, q4)) / 2 - va / 2 * (q3 - q4)
+
+    return -(Hp - Hm) / dx + Source(p0, q0)

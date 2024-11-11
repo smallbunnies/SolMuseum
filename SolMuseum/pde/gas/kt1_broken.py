@@ -1,18 +1,18 @@
-from .util import *
+from SolMuseum.pde.gas.util import *
 
-__all__ = ['rupture_ngs_pipe_firstorder', 'leakage_ngs_pipe_firstorder']
+__all__ = ['rupture_ngs_pipe_kt1', 'leakage_ngs_pipe_kt1']
 
 
-def rupture_ngs_pipe_firstorder(p: Var,
-                                q: Var,
-                                lam,
-                                va,
-                                D,
-                                S,
-                                dx,
-                                M,
-                                pipe_name: str,
-                                idx_leak):
+def rupture_ngs_pipe_kt1(p: Var,
+                         q: Var,
+                         lam,
+                         va,
+                         D,
+                         S,
+                         dx,
+                         M,
+                         pipe_name: str,
+                         idx_leak):
     if not is_integer(M):
         raise TypeError(f'M is {type(M)} instead of integer')
 
@@ -28,11 +28,11 @@ def rupture_ngs_pipe_firstorder(p: Var,
     artifact[qleak2.name] = qleak2
 
     # index = 0
-    artifact['q' + pipe_name + 'bd2'] = Eqn(q.name + pipe_name + 'bd2',
+    artifact['q' + pipe_name + 'bd2'] = Eqn(q.name + 'bd2',
                                             S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                     S * p[1] - va * q[1]))
     # 1<= index <= idx_leak-2
-    rhs = mol_tvd1_q_eqn_rhs1([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
                               [q[0:idx_leak - 2], q[1:idx_leak - 1], q[2:idx_leak]],
                               S,
                               va,
@@ -42,7 +42,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_eqn1'] = Ode(f'kt1-q{pipe_name}_1',
                                               rhs,
                                               q[1:idx_leak - 1])
-    rhs = mol_tvd1_p_eqn_rhs1([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
                               [q[0:idx_leak - 2], q[1:idx_leak - 1], q[2:idx_leak]],
                               S,
                               va,
@@ -52,7 +52,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
                                               p[1:idx_leak - 1])
 
     # index = idx_leak-1
-    rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
                               [q[idx_leak - 2], q[idx_leak - 1], qleak1],
                               S,
                               va,
@@ -62,7 +62,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_leak1'] = Ode(f'kt1-q{pipe_name}_leak_1',
                                                rhs,
                                                q[idx_leak - 1])
-    rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
                               [q[idx_leak - 2], q[idx_leak - 1], qleak1],
                               S,
                               va,
@@ -80,7 +80,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_leak3_2'] = Eqn(f'kt1-q{pipe_name}_leak_3_2',
                                                  eqn)
     # index = idx_leak+1
-    rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
                               [qleak2, q[idx_leak + 1], q[idx_leak + 2]],
                               S,
                               va,
@@ -90,7 +90,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_leak4'] = Ode(f'kt1-q{pipe_name}_leak_4',
                                                rhs,
                                                q[idx_leak + 1])
-    rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
                               [qleak2, q[idx_leak + 1], q[idx_leak + 2]],
                               S,
                               va,
@@ -99,7 +99,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
                                                rhs,
                                                p[idx_leak + 1])
     #  M-1>=index >= idx_leak + 2
-    rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
                               [q[idx_leak + 1:M - 1], q[idx_leak + 2:M], q[idx_leak + 3:M + 1]],
                               S,
                               va,
@@ -109,7 +109,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_eqn3'] = Ode(f'kt1-q{pipe_name}_3',
                                               rhs,
                                               q[idx_leak + 2:M])
-    rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
                               [q[idx_leak + 1:M - 1], q[idx_leak + 2:M], q[idx_leak + 3:M + 1]],
                               S,
                               va,
@@ -118,7 +118,7 @@ def rupture_ngs_pipe_firstorder(p: Var,
                                               rhs,
                                               p[idx_leak + 2:M])
     # index = M
-    artifact['p' + pipe_name + 'bd1'] = Eqn(p.name + pipe_name + 'bd1',
+    artifact['p' + pipe_name + 'bd1'] = Eqn(p.name + 'bd1',
                                             S * p[M] + va * q[M] + S * p[M - 2] + va * q[
                                                 M - 2] - 2 * (S * p[M - 1] + va * q[M - 1]))
 
@@ -137,18 +137,18 @@ def rupture_ngs_pipe_firstorder(p: Var,
     return artifact
 
 
-def leakage_ngs_pipe_firstorder(p: Var,
-                                q: Var,
-                                lam,
-                                va,
-                                D,
-                                S,
-                                dx,
-                                dt,
-                                M,
-                                pipe_name: str,
-                                idx_leak,
-                                d):
+def leakage_ngs_pipe_kt1(p: Var,
+                         q: Var,
+                         lam,
+                         va,
+                         D,
+                         S,
+                         dx,
+                         dt,
+                         M,
+                         pipe_name: str,
+                         idx_leak,
+                         d):
     if not is_integer(M):
         raise TypeError(f'M is {type(M)} instead of integer')
 
@@ -171,7 +171,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
                                             S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                     S * p[1] - va * q[1]))
     # 1<= index <= idx_leak-2
-    rhs = mol_tvd1_q_eqn_rhs1([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
                               [q[0:idx_leak - 2], q[1:idx_leak - 1], q[2:idx_leak]],
                               S,
                               va,
@@ -181,7 +181,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_eqn1'] = Ode(f'kt1-q{pipe_name}_1',
                                               rhs,
                                               q[1:idx_leak - 1])
-    rhs = mol_tvd1_p_eqn_rhs1([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[0:idx_leak - 2], p[1:idx_leak - 1], p[2:idx_leak]],
                               [q[0:idx_leak - 2], q[1:idx_leak - 1], q[2:idx_leak]],
                               S,
                               va,
@@ -191,7 +191,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
                                               p[1:idx_leak - 1])
 
     # index = idx_leak-1
-    rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
                               [q[idx_leak - 2], q[idx_leak - 1], qleak1],
                               S,
                               va,
@@ -201,7 +201,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_leak1'] = Ode(f'kt1-q{pipe_name}_leak_1',
                                                rhs,
                                                q[idx_leak - 1])
-    rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
                               [q[idx_leak - 2], q[idx_leak - 1], qleak1],
                               S,
                               va,
@@ -219,7 +219,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_leak3_2'] = Eqn(f'kt1-q{pipe_name}_leak_3_2',
                                                  eqn)
     # index = idx_leak+1
-    rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
                               [qleak2, q[idx_leak + 1], q[idx_leak + 2]],
                               S,
                               va,
@@ -229,7 +229,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_leak4'] = Ode(f'kt1-q{pipe_name}_leak_4',
                                                rhs,
                                                q[idx_leak + 1])
-    rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
                               [qleak2, q[idx_leak + 1], q[idx_leak + 2]],
                               S,
                               va,
@@ -238,7 +238,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
                                                rhs,
                                                p[idx_leak + 1])
     #  M-1>=index >= idx_leak + 2
-    rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
+    rhs = mol_tvd1_q_eqn_rhs0([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
                               [q[idx_leak + 1:M - 1], q[idx_leak + 2:M], q[idx_leak + 3:M + 1]],
                               S,
                               va,
@@ -248,7 +248,7 @@ def leakage_ngs_pipe_firstorder(p: Var,
     artifact['q' + pipe_name + '_eqn3'] = Ode(f'kt1-q{pipe_name}_3',
                                               rhs,
                                               q[idx_leak + 2:M])
-    rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
+    rhs = mol_tvd1_p_eqn_rhs0([p[idx_leak + 1:M - 1], p[idx_leak + 2:M], p[idx_leak + 3:M + 1]],
                               [q[idx_leak + 1:M - 1], q[idx_leak + 2:M], q[idx_leak + 3:M + 1]],
                               S,
                               va,

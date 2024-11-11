@@ -1,4 +1,4 @@
-from SolMuseum.pde.util import *
+from SolMuseum.pde.gas.util import *
 from Solverz.sym_algebra.functions import MulVarFunc
 
 

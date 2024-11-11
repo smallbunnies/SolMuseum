@@ -1,4 +1,4 @@
-from .util import *
+from SolMuseum.pde.gas.util import *
 
 __all__ = ['rupture_ngs_pipe_cha', 'leakage_ngs_pipe_cha']
 

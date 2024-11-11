@@ -1,4 +1,4 @@
-from SolMuseum.pde.util import *
+from SolMuseum.pde.gas.util import *
 from SolMuseum.pde.basic import SolPde
 
 variables = ['pm2', 'pm1', 'p0', 'pp1', 'pp2', 'qm2', 'qm1', 'q0', 'qp1', 'qp2']

@@ -1,4 +1,4 @@
-from .util import *
+from SolMuseum.pde.gas.util import *
 
 
 def ngs_pipe(p: Var,
@@ -139,7 +139,7 @@ def ngs_pipe(p: Var,
             #                           lam,
             #                           D,
             #                           dx)
-            from .kt1.kt1_pipe import kt1_ode0
+            from SolMuseum.pde.gas .kt1.kt1_pipe import kt1_ode0
             rhs = kt1_ode0(p[0:M - 1], p[1:M], p[2:M + 1], q[0:M - 1], q[1:M], q[2:M + 1],
                            S,
                            va,
@@ -167,11 +167,83 @@ def ngs_pipe(p: Var,
                                                      S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                              S * p[1] - va * q[1]))
 
+        case 'kt2':
+            rhs = mol_tvd1_q_eqn_rhs0([p[0], p[1], p[2]],
+                                      [q[0], q[1], q[2]],
+                                      S,
+                                      va,
+                                      lam,
+                                      D,
+                                      dx)
+            artifact['q_' + pipe_name + '_eqn1'] = Ode(f'kt2-q{pipe_name}_1',
+                                                       rhs,
+                                                       q[1])
+
+            rhs = mol_tvd1_p_eqn_rhs0([p[0], p[1], p[2]],
+                                      [q[0], q[1], q[2]],
+                                      S,
+                                      va,
+                                      dx)
+            artifact['p_' + pipe_name + '_eqn1'] = Ode(f'kt2-p{pipe_name}_1',
+                                                       rhs,
+                                                       p[1])
+
+            rhs = mol_tvd1_q_eqn_rhs0([p[M - 2], p[M - 1], p[M]],
+                                      [q[M - 2], q[M - 1], q[M]],
+                                      S,
+                                      va,
+                                      lam,
+                                      D,
+                                      dx)
+            artifact['q_' + pipe_name + '_eqn2'] = Ode(f'kt2-q{pipe_name}_2',
+                                                       rhs,
+                                                       q[M - 1])
+
+            rhs = mol_tvd1_p_eqn_rhs0([p[M - 2], p[M - 1], p[M]],
+                                      [q[M - 2], q[M - 1], q[M]],
+                                      S,
+                                      va,
+                                      dx)
+            artifact['p_' + pipe_name + '_eqn2'] = Ode(f'kt2-p{pipe_name}_2',
+                                                       rhs,
+                                                       p[M - 1])
+
+            rhs = mol_tvd2_q_eqn_rhs([p[0:M-3], p[1:M-2], p[2:M-1], p[3:M], p[4:M+1]],
+                                     [q[0:M-3], q[1:M-2], q[2:M-1], q[3:M], q[4:M+1]],
+                                     S,
+                                     va,
+                                     lam,
+                                     D,
+                                     dx,
+                                     2,
+                                     M-1)
+            artifact['q_' + pipe_name + '_eqn3'] = Ode(f'kt2-q{pipe_name}_3',
+                                                       rhs,
+                                                       q[2:M - 1])
+
+            rhs = mol_tvd2_p_eqn_rhs([p[0:M-3], p[1:M-2], p[2:M-1], p[3:M], p[4:M+1]],
+                                     [q[0:M-3], q[1:M-2], q[2:M-1], q[3:M], q[4:M+1]],
+                                     S,
+                                     va,
+                                     dx,
+                                     2,
+                                     M-1)
+            artifact['p_' + pipe_name + '_eqn3'] = Ode(f'kt2-p{pipe_name}_3',
+                                                       rhs,
+                                                       p[2:M - 1])
+
+            artifact['p_' + pipe_name + 'bd1'] = Eqn(p.name + 'bd1',
+                                                     S * p[M] + va * q[M] + S * p[M - 2] + va * q[
+                                                         M - 2] - 2 * (
+                                                             S * p[M - 1] + va * q[M - 1]))
+            artifact['q_' + pipe_name + 'bd2'] = Eqn(q.name + 'bd2',
+                                                     S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
+                                                             S * p[1] - va * q[1]))
         case 'weno3':
 
             # rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, M - 1)
 
-            from .weno3.weno_pipe import weno_odep, weno_odeq
+            from SolMuseum.pde import weno_odep, weno_odeq
             rhs = weno_odeq(p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1],
                             q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1],
                             S, va, lam, D, dx)
