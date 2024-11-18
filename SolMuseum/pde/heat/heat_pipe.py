@@ -14,35 +14,45 @@ def heat_pipe(T: Var,
               pipe_name: str,
               method='kt2'):
     r"""
-    This function model and discretize natural gas equations
+    This function model and discretize heat pipe equations
 
         .. math::
-            \pdv{p}{t}+\frac{c^2}{S}\pdv{q}{x}=&0,\\
-            \pdv{q}{t}+S\pdv{p}{x}+\frac{\lambda c^2q|q|}{2DSp}=&0
+            \frac{\partial\tau}{\partial t}+\frac{\dot{m}}{\gamma \rho}\frac{\partial\tau}{\partial x}+
+            \frac{\lambda }{\gamma\rho C_\mathrm{p}}(\tau-\tau^\mathrm{amb})=0
+
+    where $\tau$ denotes the two-dimensional temperature distribution, $\gamma$ is the cross sectional ares, $\rho$ is
+    the water density, $\dot{m}$ is the water mass flow, $\lambda$ is the friction coefficient, $C_p$ is the thermal
+    capacity, and $\tau^\text{amb}$ is the ambient temperature.
 
     Parameters
     ==========
 
-    p : Var
-        The pressure w.r.t. x and t
+    T : Var
+        The temperature distribution w.r.t. x and t
 
-    q : Var
-        The mass flow w.r.t. x and t
+    m: Param or Var
+        The mass flow rate
 
     lam : Param or Number
         The friction $\lambda$
 
-    va : Param or Number
-        The speed of sound
+    rho: Param or Number
+        The water density
 
-    D : Param or Number
-        The pipe diameter
+    Cp: Param or Number
+        Thermal capacity of mass flow
 
     S : Param or Number
         The cross-section area
 
+    Tamb: Param or Number
+        The ambient temperature
+
     dx : Param or Number
         The spatial difference step size
+
+    dt : Param or Number
+        The temporal step size. `dt` can be set to 0 if one uses the kt2 scheme.
 
     M : Param or Number
         The friction $\lambda$
@@ -52,19 +62,34 @@ def heat_pipe(T: Var,
 
     method : str
 
-        'cha' - The method of characteristics
+        'iu' - The method of implicit upwind [1]_
 
             .. math ::
-                p_i^{j+1}-p_{i-1}^j+\frac{c}{S}\left(q_i^{j+1}-q_{i-1}^j\right)+\frac{\lambda c^2 \Delta x}{4 D S^2} \frac{\left(q_i^{j+1}+q_{i-1}^j\right)\left|q_i^{j+1}+q_{i-1}^j\right|}{p_i^{j+1}+p_{i-1}^j}&=0,\quad 1\leq i\leq M,\\
-                p_{i+1}^j-p_i^{j+1}+\frac{c}{S}\left(q_i^{j+1}-q_{i+1}^j\right)+\frac{\lambda c^2 \Delta x}{4 D S^2} \frac{\left(q_i^{j+1}+q_{i+1}^j\right)\left|q_i^{j+1}+q_{i+1}^j\right|}{p_i^{j+1}+p_{i+1}^j}&=0,\quad 0\leq i\leq M-1.
+                \left\{
+                \begin{aligned}
+                    &\frac{\partial \tau}{\partial t}=\frac{\tau_{k+1}^{n+1}-\tau_{k+1}^{n}}{\Delta t}\\
+                    &\frac{\partial \tau}{\partial x}=\frac{\tau_{k+1}^{n+1}-\tau_k^{n+1}}{\Delta x}\\
+                    &\tau=\tau_{k+1}^{n+1}
+                \end{aligned}
+                \right.
 
-        'weno' - The WENO semi-discretization
+        'yao' - The Yao's scheme, i.e. the second order explicit scheme [2]_
+
+            .. math ::
+                \left\{
+                \begin{aligned}
+                    &\frac{\partial \tau}{\partial t}=\frac{\tau_k^{n+1}-\tau_k^{n}+\tau_{k+1}^{n+1}-\tau_{k+1}^{n}}{2\Delta t}\\
+                    &\frac{\partial \tau}{\partial x}=\frac{\tau_{k+1}^{n+1}-\tau_k^{n+1}+\tau_{k+1}^{n}-\tau_{k}^{n}}{2\Delta x}\\
+                     &\tau=\frac{\tau_{k+1}^{n+1}+\tau_k^{n+1}+\tau_{k+1}^{n}+\tau_{k}^{n}}{4}
+                \end{aligned}
+                \right.
+
+        'kt2' - Default, the second order kurganov-tadmor scheme [3]_
 
             .. math ::
                 \pdv{u_j}{t}=-\frac{1}{\Delta x}\qty(\hat{f}_{j+1/2}-\hat{f}_{j-1/2})+S(u_j)
 
-            where $\hat{f}_{j+1/2}$ and $\hat{f}_{j-1/2}$ are reconstructed by the weighted essentially non-oscillatory
-            scheme [1]_.
+            where $\hat{f}_{j+1/2}$ and $\hat{f}_{j-1/2}$ are reconstructed by the second order kurganov-tadmor scheme.
 
     Returns
     =======
@@ -75,7 +100,11 @@ def heat_pipe(T: Var,
     References
     ==========
 
-    .. [1] C.-W. Shu, “Essentially non-oscillatory and weighted essentially non- oscillatory schemes for hyperbolic conservation laws,” in Advanced Numerical Approximation of Nonlinear Hyperbolic Equations: Lectures given at the 2nd Session of the Centro Internazionale Matematico Estivo (C.I.M.E.) held in Cetraro, Italy, June 23–28, 1997, A. Quarteroni, Ed. Berlin, Heidelberg: Springer Berlin Heidelberg, 1998, pp. 325–432.
+    .. [1] https://doi.org/10.1016/j.apenergy.2017.08.061
+
+    .. [2] https://doi.org/10.1109/TSTE.2020.2988682
+
+    .. [3] https://doi.org/10.1006/jcph.2000.6459
 
     """
 
@@ -132,6 +161,27 @@ def heat_pipe(T: Var,
                                                       rhs,
                                                       T[M])
             artifact['theta'] = Param('theta', 1)
+        case 'iu':
+            if is_number(dt):
+                if dt <= 0:
+                    raise ValueError(f'dt must be positive, got {dt}')
+            T0 = AliasVar(T.name, init=T)
+            artifact[T0.name] = T0
+            dTdt = (T[1:M+1]-T0[1:M+1])/dt
+            dTdx = (T[1:M+1]-T[0:M])/dx
+            rhs = dTdt + m/S/rho * dTdx + lam/S/rho/Cp*(T[1:M+1]-Tamb)
+            artifact[f'iu_pipe_{pipe_name}'] = Eqn(f'iu_pipe_{pipe_name}', rhs)
+        case 'yao':
+            if is_number(dt):
+                if dt <= 0:
+                    raise ValueError(f'dt must be positive, got {dt}')
+            T0 = AliasVar(T.name, init=T)
+            artifact[T0.name] = T0
+            dTdt = (T[1:M+1]-T0[1:M+1]+T[0:M]-T0[0:M])/(2*dt)
+            dTdx = (T[1:M+1]+T0[1:M+1]-T[0:M]-T0[0:M])/(2*dx)
+            Tavg = (T[1:M+1]+T0[1:M+1]+T[0:M]+T0[0:M])/4
+            rhs = dTdt + m/S/rho*dTdx + lam/S/rho/Cp*(Tavg-Tamb)
+            artifact[f'yao_pipe_{pipe_name}'] = Eqn(f'yao_pipe_{pipe_name}', rhs)
         case _:
             raise NotImplementedError(f'No such method: {method}!')
     return artifact
