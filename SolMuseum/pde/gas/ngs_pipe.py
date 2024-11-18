@@ -18,6 +18,9 @@ def ngs_pipe(p: Var,
         .. math::
             \pdv{p}{t}+\frac{c^2}{S}\pdv{q}{x}=&0,\\
             \pdv{q}{t}+S\pdv{p}{x}+\frac{\lambda c^2q|q|}{2DSp}=&0
+    where $p$ is the two-dimensional pressure distribution, $p$ is the two-dimensional mass flow distribution,
+    $c$ is the sound speed, $S$ is the cross-sectional area, $\lambda$ is the friction coefficient, and $D$ is the pipe
+    diameter.
 
     Parameters
     ==========
@@ -43,6 +46,9 @@ def ngs_pipe(p: Var,
     dx : Param or Number
         The spatial difference step size
 
+    dt : Param or Number
+        The temporal step size. `dt` can be set to 0 if one uses the kt2 scheme.
+
     M : Param or Number
         The friction $\lambda$
 
@@ -51,13 +57,52 @@ def ngs_pipe(p: Var,
 
     method : str
 
-        'cha' - The method of characteristics
+        'euler' - Default, the euler scheme [3]_
+
+            .. math ::
+                \left\{
+                \begin{aligned}
+                    &\pdv{u}{t}=\frac{u_{i+1}^{j+1}-u_{i+1}^{j}}{\Delta t}\\
+                    &\pdv{u}{x}=\frac{u_{i+1}^{j+1}-u_{i}^{j+1}}{\Delta x}\\
+                     &u=u_{i+1}^{j+1}
+                \end{aligned}
+                \right.
+
+        'cdm' - The central difference scheme [3]_
+
+
+            .. math ::
+                \left\{
+                \begin{aligned}
+                    &\pdv{u}{t}=\frac{u_{i}^{j+1}+u_{i+1}^{j+1}-u_{i}^{j}-u_{i+1}^{j}}{2\Delta t}\\
+                    &\pdv{u}{x}=\frac{u_{i+1}^{j+1}+u_{i+1}^{j}-u_{i}^{j+1}-u_{i}^{j}}{2\Delta x}\\
+                    &u=\frac{u_{i}^{j+1}+u_{i+1}^{j+1}+u_{i}^{j}+u_{i+1}^{j}}{4}
+                \end{aligned}
+                \right.
+
+        'cha' - The method of characteristics [3]_
 
             .. math ::
                 p_i^{j+1}-p_{i-1}^j+\frac{c}{S}\left(q_i^{j+1}-q_{i-1}^j\right)+\frac{\lambda c^2 \Delta x}{4 D S^2} \frac{\left(q_i^{j+1}+q_{i-1}^j\right)\left|q_i^{j+1}+q_{i-1}^j\right|}{p_i^{j+1}+p_{i-1}^j}&=0,\quad 1\leq i\leq M,\\
                 p_{i+1}^j-p_i^{j+1}+\frac{c}{S}\left(q_i^{j+1}-q_{i+1}^j\right)+\frac{\lambda c^2 \Delta x}{4 D S^2} \frac{\left(q_i^{j+1}+q_{i+1}^j\right)\left|q_i^{j+1}+q_{i+1}^j\right|}{p_i^{j+1}+p_{i+1}^j}&=0,\quad 0\leq i\leq M-1.
 
-        'weno' - The WENO semi-discretization
+        'kt1' - The first order Kurganov-Tadmor scheme
+
+            .. math ::
+                \pdv{u_j}{t}=-\frac{1}{\Delta x}\qty(\hat{f}_{j+1/2}-\hat{f}_{j-1/2})+S(u_j)
+
+            where $\hat{f}_{j+1/2}$ and $\hat{f}_{j-1/2}$ are reconstructed by the first order Kurganov-Tadmor scheme [2]_.
+
+        'kt2' - The second order Kurganov-Tadmor scheme
+
+            .. math ::
+                \pdv{u_j}{t}=-\frac{1}{\Delta x}\qty(\hat{f}_{j+1/2}-\hat{f}_{j-1/2})+S(u_j)
+
+            where $\hat{f}_{j+1/2}$ and $\hat{f}_{j-1/2}$ are reconstructed by the second order Kurganov-Tadmor scheme [2]_.
+
+            The default value of $\theta$ in minmod limiter is set to be 1.
+
+        'weno3' - The second order WENO semi-discretization scheme
 
             .. math ::
                 \pdv{u_j}{t}=-\frac{1}{\Delta x}\qty(\hat{f}_{j+1/2}-\hat{f}_{j-1/2})+S(u_j)
@@ -75,6 +120,10 @@ def ngs_pipe(p: Var,
     ==========
 
     .. [1] C.-W. Shu, “Essentially non-oscillatory and weighted essentially non- oscillatory schemes for hyperbolic conservation laws,” in Advanced Numerical Approximation of Nonlinear Hyperbolic Equations: Lectures given at the 2nd Session of the Centro Internazionale Matematico Estivo (C.I.M.E.) held in Cetraro, Italy, June 23–28, 1997, A. Quarteroni, Ed. Berlin, Heidelberg: Springer Berlin Heidelberg, 1998, pp. 325–432.
+
+    .. [2] https://doi.org/10.1006/jcph.2000.6459
+
+    .. [3] https://doi.org/10.1109/TSG.2022.3203485
 
     """
 
@@ -132,20 +181,13 @@ def ngs_pipe(p: Var,
             rhs = cha(p_, q_, p_0, q_0, '-', lam, va, S, D, dx)
             artifact[f'cha_{pipe_name}_neg'] = Eqn(f'cha_{pipe_name}_neg', rhs)
         case 'kt1':
-            # rhs = mol_tvd1_q_eqn_rhs0([p[0:M - 1], p[1:M], p[2:M + 1]],
-            #                           [q[0:M - 1], q[1:M], q[2:M + 1]],
-            #                           S,
-            #                           va,
-            #                           lam,
-            #                           D,
-            #                           dx)
-            from SolMuseum.pde.gas .kt1.kt1_pipe import kt1_ode0
-            rhs = kt1_ode0(p[0:M - 1], p[1:M], p[2:M + 1], q[0:M - 1], q[1:M], q[2:M + 1],
-                           S,
-                           va,
-                           lam,
-                           D,
-                           dx)
+            rhs = mol_tvd1_q_eqn_rhs0([p[0:M - 1], p[1:M], p[2:M + 1]],
+                                      [q[0:M - 1], q[1:M], q[2:M + 1]],
+                                      S,
+                                      va,
+                                      lam,
+                                      D,
+                                      dx)
             artifact['q_' + pipe_name + '_eqn'] = Ode(f'kt1-q{pipe_name}',
                                                       rhs,
                                                       q[1:M])
@@ -208,30 +250,27 @@ def ngs_pipe(p: Var,
                                                        rhs,
                                                        p[M - 1])
 
-            rhs = mol_tvd2_q_eqn_rhs([p[0:M-3], p[1:M-2], p[2:M-1], p[3:M], p[4:M+1]],
-                                     [q[0:M-3], q[1:M-2], q[2:M-1], q[3:M], q[4:M+1]],
+            rhs = mol_tvd2_q_eqn_rhs([p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1]],
+                                     [q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1]],
                                      S,
                                      va,
                                      lam,
                                      D,
-                                     dx,
-                                     2,
-                                     M-1)
+                                     dx)
             artifact['q_' + pipe_name + '_eqn3'] = Ode(f'kt2-q{pipe_name}_3',
                                                        rhs,
                                                        q[2:M - 1])
 
-            rhs = mol_tvd2_p_eqn_rhs([p[0:M-3], p[1:M-2], p[2:M-1], p[3:M], p[4:M+1]],
-                                     [q[0:M-3], q[1:M-2], q[2:M-1], q[3:M], q[4:M+1]],
+            rhs = mol_tvd2_p_eqn_rhs([p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1]],
+                                     [q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1]],
                                      S,
                                      va,
-                                     dx,
-                                     2,
-                                     M-1)
+                                     dx)
             artifact['p_' + pipe_name + '_eqn3'] = Ode(f'kt2-p{pipe_name}_3',
                                                        rhs,
                                                        p[2:M - 1])
-
+            theta = Param('theta', 1)
+            artifact['theta'] = theta
             artifact['p_' + pipe_name + 'bd1'] = Eqn(p.name + 'bd1',
                                                      S * p[M] + va * q[M] + S * p[M - 2] + va * q[
                                                          M - 2] - 2 * (
@@ -240,13 +279,18 @@ def ngs_pipe(p: Var,
                                                      S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                              S * p[1] - va * q[1]))
         case 'weno3':
-
-            # rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, M - 1)
-
-            from SolMuseum.pde import weno_odep, weno_odeq
+            from SolMuseum.pde.gas.weno3.weno_pipe import weno_odep, weno_odeq
             rhs = weno_odeq(p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1],
                             q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1],
                             S, va, lam, D, dx)
+            # rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, M - 1)
+            # rhs = mol_weno_q_eqn_rhs1([p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1]],
+            #                           [q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1]],
+            #                           S,
+            #                           va,
+            #                           lam,
+            #                           D,
+            #                           dx)
 
             artifact['q_' + pipe_name + '_eqn1'] = Ode(f'weno3-q{pipe_name}_1',
                                                        rhs,
@@ -277,6 +321,11 @@ def ngs_pipe(p: Var,
             rhs = weno_odep(p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1],
                             q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1],
                             S, va, lam, D, dx)
+            # rhs = mol_weno_p_eqn_rhs1([p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1]],
+            #                           [q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1]],
+            #                           S,
+            #                           va,
+            #                           dx)
 
             artifact['p_' + pipe_name + '_eqn1'] = Ode(f'weno3-p{pipe_name}_1',
                                                        rhs,

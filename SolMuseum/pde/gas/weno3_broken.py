@@ -131,7 +131,6 @@ def rupture_ngs_pipe_weno3(p: Var,
                                                rhs,
                                                p[idx_leak + 1])
 
-
     #  index = idx_leak + 2
     rhs = mol_weno_q_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
                               [qleak2, q[idx_leak + 1], q[idx_leak + 2], q[idx_leak + 3], q[idx_leak + 4]],
