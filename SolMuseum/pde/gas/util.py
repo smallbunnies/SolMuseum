@@ -4,6 +4,7 @@ from Solverz.utilities.type_checker import is_integer, is_number
 from sympy import Add, Mul, Rational, Integer
 import numpy as np
 
+from .weno3.weno_pipe import weno_odep, weno_odeq
 
 def cdm(p11, p10, p01, p00,
         q11, q10, q01, q00,

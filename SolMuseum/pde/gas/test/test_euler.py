@@ -67,12 +67,14 @@ sol = fdae_solver(nfdae, [0, T], y0, Opt(step_size=dt))
 #     # Write each DataFrame to a different sheet
 #     df.to_excel(writer, sheet_name='euler')
 
-df = pd.read_excel('res0.xlsx',
-                   sheet_name='euler',
-                   engine='openpyxl',
-                   index_col=None
-                   )
-qin = np.asarray(df['qin'])
-pout = np.asarray(df['pout'])
-np.testing.assert_allclose(qin, sol.Y['q'][:, 0])
-np.testing.assert_allclose(pout, sol.Y['p'][:, -1])
+
+def test_euler(shared_datadir):
+    df = pd.read_excel(shared_datadir/'res0.xlsx',
+                       sheet_name='euler',
+                       engine='openpyxl',
+                       index_col=None
+                       )
+    qin = np.asarray(df['qin'])
+    pout = np.asarray(df['pout'])
+    np.testing.assert_allclose(qin, sol.Y['q'][:, 0])
+    np.testing.assert_allclose(pout, sol.Y['p'][:, -1])

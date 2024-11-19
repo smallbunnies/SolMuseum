@@ -1,1 +1,1 @@
-from broken_ngs_pipe import rupture_pipe, leakage_pipe
+from .broken_ngs_pipe import rupture_pipe, leakage_pipe

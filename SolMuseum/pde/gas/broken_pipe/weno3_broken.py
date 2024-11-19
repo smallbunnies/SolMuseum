@@ -15,6 +15,8 @@ def rupture_ngs_pipe_weno3(p: Var,
                            idx_leak):
     if not is_integer(M):
         raise TypeError(f'M is {type(M)} instead of integer')
+    if M < 5:
+        raise ValueError('M must be greater than 5, since weno3 uses a five point stencil.')
 
     if not is_number(dx):
         raise TypeError(f'dx is {type(dx)} instead of number')
@@ -52,35 +54,49 @@ def rupture_ngs_pipe_weno3(p: Var,
     artifact['p' + pipe_name + '_eqn2'] = Ode(f'weno3-p_{pipe_name}_2',
                                               rhs,
                                               p[1])
-    # 2<= index <= idx_leak-3
-    rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, idx_leak - 2)
+    # # 2<= index <= idx_leak-3
+    # rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, 2, idx_leak - 2)
+    # artifact['q' + pipe_name + '_leak1'] = Ode(f'weno3-q_{pipe_name}__leak_1',
+    #                                            rhs,
+    #                                            q[2:idx_leak - 2])
+    # rhs = mol_weno_p_eqn_rhs(p, q, S, va, dx, 2, idx_leak - 2)
+    # artifact['p' + pipe_name + '_leak1'] = Ode(f'weno3-p_{pipe_name}__leak_1',
+    #                                            rhs,
+    #                                            p[2:idx_leak - 2])
+    #
+    # # index = idx_leak-2
+    # rhs = mol_weno_q_eqn_rhs1([p[idx_leak - 4], p[idx_leak - 3], p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
+    #                           [q[idx_leak - 4], q[idx_leak - 3], q[idx_leak - 2], q[idx_leak - 1], qleak1],
+    #                           S,
+    #                           va,
+    #                           lam,
+    #                           D,
+    #                           dx)
+    # artifact['q' + pipe_name + '_leak6'] = Ode(f'weno3-q_{pipe_name}__leak_6',
+    #                                            rhs,
+    #                                            q[idx_leak - 2])
+    # rhs = mol_weno_p_eqn_rhs1([p[idx_leak - 4], p[idx_leak - 3], p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
+    #                           [q[idx_leak - 4], q[idx_leak - 3], q[idx_leak - 2], q[idx_leak - 1], qleak1],
+    #                           S,
+    #                           va,
+    #                           dx)
+    # artifact['p' + pipe_name + '_leak6'] = Ode(f'weno3-p_{pipe_name}__leak_6',
+    #                                            rhs,
+    #                                            p[idx_leak - 2])
+
+    # 2<= index <= idx_leak-2
+    rhs = weno_odeq(p[0:idx_leak - 3], p[1:idx_leak - 2], p[2:idx_leak - 1], p[3:idx_leak], p[4:idx_leak + 1],
+                    q[0:idx_leak - 3], q[1:idx_leak - 2], q[2:idx_leak - 1], q[3:idx_leak], q[4:idx_leak + 1],
+                    S, va, lam, D, dx)
     artifact['q' + pipe_name + '_leak1'] = Ode(f'weno3-q_{pipe_name}__leak_1',
                                                rhs,
-                                               q[2:idx_leak - 2])
-    rhs = mol_weno_p_eqn_rhs(p, q, S, va, dx, 2, idx_leak - 2)
+                                               q[2:idx_leak - 1])
+    rhs = weno_odep(p[0:idx_leak - 3], p[1:idx_leak - 2], p[2:idx_leak - 1], p[3:idx_leak], p[4:idx_leak + 1],
+                    q[0:idx_leak - 3], q[1:idx_leak - 2], q[2:idx_leak - 1], q[3:idx_leak], q[4:idx_leak + 1],
+                    S, va, lam, D, dx)
     artifact['p' + pipe_name + '_leak1'] = Ode(f'weno3-p_{pipe_name}__leak_1',
                                                rhs,
-                                               p[2:idx_leak - 2])
-
-    # index = idx_leak-2
-    rhs = mol_weno_q_eqn_rhs1([p[idx_leak - 4], p[idx_leak - 3], p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
-                              [q[idx_leak - 4], q[idx_leak - 3], q[idx_leak - 2], q[idx_leak - 1], qleak1],
-                              S,
-                              va,
-                              lam,
-                              D,
-                              dx)
-    artifact['q' + pipe_name + '_leak6'] = Ode(f'weno3-q_{pipe_name}__leak_6',
-                                               rhs,
-                                               q[idx_leak - 2])
-    rhs = mol_weno_p_eqn_rhs1([p[idx_leak - 4], p[idx_leak - 3], p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
-                              [q[idx_leak - 4], q[idx_leak - 3], q[idx_leak - 2], q[idx_leak - 1], qleak1],
-                              S,
-                              va,
-                              dx)
-    artifact['p' + pipe_name + '_leak6'] = Ode(f'weno3-p_{pipe_name}__leak_6',
-                                               rhs,
-                                               p[idx_leak - 2])
+                                               p[2:idx_leak - 1])
 
     # index = idx_leak-1
     rhs = mol_tvd1_q_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
@@ -131,35 +147,54 @@ def rupture_ngs_pipe_weno3(p: Var,
                                                rhs,
                                                p[idx_leak + 1])
 
-    #  index = idx_leak + 2
-    rhs = mol_weno_q_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
-                              [qleak2, q[idx_leak + 1], q[idx_leak + 2], q[idx_leak + 3], q[idx_leak + 4]],
-                              S,
-                              va,
-                              lam,
-                              D,
-                              dx)
-    artifact['q' + pipe_name + '_leak7'] = Ode(f'weno3-q_{pipe_name}__leak_7',
-                                               rhs,
-                                               q[idx_leak + 2])
-    rhs = mol_weno_p_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
-                              [qleak2, q[idx_leak + 1], q[idx_leak + 2], q[idx_leak + 3], q[idx_leak + 4]],
-                              S,
-                              va,
-                              dx)
-    artifact['p' + pipe_name + '_leak7'] = Ode(f'weno3-p_{pipe_name}__leak_7',
-                                               rhs,
-                                               p[idx_leak + 2])
+    # #  index = idx_leak + 2
+    # rhs = mol_weno_q_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
+    #                           [qleak2, q[idx_leak + 1], q[idx_leak + 2], q[idx_leak + 3], q[idx_leak + 4]],
+    #                           S,
+    #                           va,
+    #                           lam,
+    #                           D,
+    #                           dx)
+    # artifact['q' + pipe_name + '_leak7'] = Ode(f'weno3-q_{pipe_name}__leak_7',
+    #                                            rhs,
+    #                                            q[idx_leak + 2])
+    # rhs = mol_weno_p_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
+    #                           [qleak2, q[idx_leak + 1], q[idx_leak + 2], q[idx_leak + 3], q[idx_leak + 4]],
+    #                           S,
+    #                           va,
+    #                           dx)
+    # artifact['p' + pipe_name + '_leak7'] = Ode(f'weno3-p_{pipe_name}__leak_7',
+    #                                            rhs,
+    #                                            p[idx_leak + 2])
+    #
+    # #  M-2>=index > idx_leak + 2
+    # rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, idx_leak + 3, M - 1)
+    # artifact['q' + pipe_name + '_leak5'] = Ode(f'weno3-q_{pipe_name}__leak_5',
+    #                                            rhs,
+    #                                            q[idx_leak + 3: M - 1])
+    # rhs = mol_weno_p_eqn_rhs(p, q, S, va, dx, idx_leak + 3, M - 1)
+    # artifact['p' + pipe_name + '_leak5'] = Ode(f'weno3-p_{pipe_name}__leak_5',
+    #                                            rhs,
+    #                                            p[idx_leak + 3:M - 1])
 
-    #  M-2>=index > idx_leak + 2
-    rhs = mol_weno_q_eqn_rhs(p, q, S, va, lam, D, dx, idx_leak + 3, M - 1)
+    #  M-2>=index > idx_leak + 1
+    rhs = weno_odeq(p[idx_leak:M - 3], p[idx_leak + 1:M - 2], p[idx_leak + 2:M - 1], p[idx_leak + 3:M],
+                    p[idx_leak + 4:M + 1],
+                    q[idx_leak:M - 3], q[idx_leak + 1:M - 2], q[idx_leak + 2:M - 1], q[idx_leak + 3:M],
+                    q[idx_leak + 4:M + 1],
+                    S, va, lam, D, dx)
     artifact['q' + pipe_name + '_leak5'] = Ode(f'weno3-q_{pipe_name}__leak_5',
                                                rhs,
-                                               q[idx_leak + 3: M - 1])
-    rhs = mol_weno_p_eqn_rhs(p, q, S, va, dx, idx_leak + 3, M - 1)
+                                               q[idx_leak + 2: M - 1])
+    rhs = weno_odep(p[idx_leak:M - 3], p[idx_leak + 1:M - 2], p[idx_leak + 2:M - 1], p[idx_leak + 3:M],
+                    p[idx_leak + 4:M + 1],
+                    q[idx_leak:M - 3], q[idx_leak + 1:M - 2], q[idx_leak + 2:M - 1], q[idx_leak + 3:M],
+                    q[idx_leak + 4:M + 1],
+                    S, va, lam, D, dx)
     artifact['p' + pipe_name + '_leak5'] = Ode(f'weno3-p_{pipe_name}__leak_5',
                                                rhs,
-                                               p[idx_leak + 3:M - 1])
+                                               p[idx_leak + 2:M - 1])
+
     # index = M-1
     rhs = mol_tvd1_q_eqn_rhs1([p[M - 2], p[M - 1], p[M]],
                               [q[M - 2], q[M - 1], q[M]],

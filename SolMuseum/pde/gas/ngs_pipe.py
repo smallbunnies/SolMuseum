@@ -22,6 +22,8 @@ def ngs_pipe(p: Var,
     $c$ is the sound speed, $S$ is the cross-sectional area, $\lambda$ is the friction coefficient, and $D$ is the pipe
     diameter.
 
+    For semi-discretization method, the boundaries are approximated using characteristics [4]_, [5]_.
+
     Parameters
     ==========
 
@@ -86,14 +88,14 @@ def ngs_pipe(p: Var,
                 p_i^{j+1}-p_{i-1}^j+\frac{c}{S}\left(q_i^{j+1}-q_{i-1}^j\right)+\frac{\lambda c^2 \Delta x}{4 D S^2} \frac{\left(q_i^{j+1}+q_{i-1}^j\right)\left|q_i^{j+1}+q_{i-1}^j\right|}{p_i^{j+1}+p_{i-1}^j}&=0,\quad 1\leq i\leq M,\\
                 p_{i+1}^j-p_i^{j+1}+\frac{c}{S}\left(q_i^{j+1}-q_{i+1}^j\right)+\frac{\lambda c^2 \Delta x}{4 D S^2} \frac{\left(q_i^{j+1}+q_{i+1}^j\right)\left|q_i^{j+1}+q_{i+1}^j\right|}{p_i^{j+1}+p_{i+1}^j}&=0,\quad 0\leq i\leq M-1.
 
-        'kt1' - The first order Kurganov-Tadmor scheme
+        'kt1' - The first order Kurganov-Tadmor semi-discretization scheme
 
             .. math ::
                 \pdv{u_j}{t}=-\frac{1}{\Delta x}\qty(\hat{f}_{j+1/2}-\hat{f}_{j-1/2})+S(u_j)
 
             where $\hat{f}_{j+1/2}$ and $\hat{f}_{j-1/2}$ are reconstructed by the first order Kurganov-Tadmor scheme [2]_.
 
-        'kt2' - The second order Kurganov-Tadmor scheme
+        'kt2' - The second order Kurganov-Tadmor semi-discretization scheme
 
             .. math ::
                 \pdv{u_j}{t}=-\frac{1}{\Delta x}\qty(\hat{f}_{j+1/2}-\hat{f}_{j-1/2})+S(u_j)
@@ -124,6 +126,10 @@ def ngs_pipe(p: Var,
     .. [2] https://doi.org/10.1006/jcph.2000.6459
 
     .. [3] https://doi.org/10.1109/TSG.2022.3203485
+
+    .. [4] https://doi.org/10.1007/978-3-030-76810-2_2
+
+    .. [5] https://arxiv.org/abs/2410.09464
 
     """
 
@@ -279,7 +285,6 @@ def ngs_pipe(p: Var,
                                                      S * p[2] - va * q[2] + S * p[0] - va * q[0] - 2 * (
                                                              S * p[1] - va * q[1]))
         case 'weno3':
-            from SolMuseum.pde.gas.weno3.weno_pipe import weno_odep, weno_odeq
             rhs = weno_odeq(p[0:M - 3], p[1:M - 2], p[2:M - 1], p[3:M], p[4:M + 1],
                             q[0:M - 3], q[1:M - 2], q[2:M - 1], q[3:M], q[4:M + 1],
                             S, va, lam, D, dx)

@@ -70,12 +70,14 @@ sol = Rodas(ndae,
 #     # Write each DataFrame to a different sheet
 #     df.to_excel(writer, sheet_name='weno3')
 
-df = pd.read_excel('res0.xlsx',
-                   sheet_name='weno3',
-                   engine='openpyxl',
-                   index_col=None
-                   )
-qin = np.asarray(df['qin'])
-pout = np.asarray(df['pout'])
-np.testing.assert_allclose(qin, sol.Y['q'][:, 0])
-np.testing.assert_allclose(pout, sol.Y['p'][:, -1])
+
+def test_weno(shared_datadir):
+    df = pd.read_excel(shared_datadir / 'res0.xlsx',
+                       sheet_name='weno3',
+                       engine='openpyxl',
+                       index_col=None
+                       )
+    qin = np.asarray(df['qin'])
+    pout = np.asarray(df['pout'])
+    np.testing.assert_allclose(qin, sol.Y['q'][:, 0])
+    np.testing.assert_allclose(pout, sol.Y['p'][:, -1])
