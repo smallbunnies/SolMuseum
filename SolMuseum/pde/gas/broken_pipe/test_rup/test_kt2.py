@@ -4,7 +4,6 @@ import pandas as pd
 from SolMuseum.pde.gas.broken_pipe import rupture_pipe
 
 
-
 def test_kt2(shared_datadir):
     # %%
     L = 51000

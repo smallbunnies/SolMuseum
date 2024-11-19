@@ -71,8 +71,6 @@ def test_kt1(shared_datadir):
     #     # Write each DataFrame to a different sheet
     #     df.to_excel(writer, sheet_name='kt1')
 
-
-
     df = pd.read_excel(shared_datadir / 'res0.xlsx',
                        sheet_name='kt1',
                        engine='openpyxl',

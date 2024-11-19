@@ -69,10 +69,7 @@ def test_euler(shared_datadir):
     #     # Write each DataFrame to a different sheet
     #     df.to_excel(writer, sheet_name='euler')
 
-
-
-
-    df = pd.read_excel(shared_datadir/'res0.xlsx',
+    df = pd.read_excel(shared_datadir / 'res0.xlsx',
                        sheet_name='euler',
                        engine='openpyxl',
                        index_col=None

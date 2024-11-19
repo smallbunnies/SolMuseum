@@ -4,7 +4,6 @@ import pandas as pd
 from SolMuseum.pde.gas.broken_pipe import leakage_pipe
 
 
-
 # %%
 def test_cha(shared_datadir):
     # %%

@@ -51,7 +51,6 @@ def test_cdm(shared_datadir):
     # %% solution
     sol = fdae_solver(nfdae, [0, T], y0, Opt(step_size=dt))
 
-
     # import matplotlib.pyplot as plt
     # plt.plot(sol.T, sol.Y['p'][:, 0])
     # plt.plot(sol.T, sol.Y['p'][:, -1])
