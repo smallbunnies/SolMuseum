@@ -5,6 +5,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 version_file = "SolMuseum/_version.py"
 
+[tool.pytest.ini_options]
+#addopts = "-n logical"
+addopts = "-vv"
+
 [project]
 name = "SolMuseum"
 dynamic = ["version"]
