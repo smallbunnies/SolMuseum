@@ -41,7 +41,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_eqn2'] = Ode(f'weno3-q_{pipe_name}_2',
+    artifact['q' + pipe_name + '_eqn2'] = Ode(f'kt2-q_{pipe_name}_2',
                                               rhs,
                                               q[1])
     rhs = mol_tvd1_p_eqn_rhs1([p[0], p[1], p[2]],
@@ -49,7 +49,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_eqn2'] = Ode(f'weno3-p_{pipe_name}_2',
+    artifact['p' + pipe_name + '_eqn2'] = Ode(f'kt2-p_{pipe_name}_2',
                                               rhs,
                                               p[1])
     # 2<= index <= idx_leak-3
@@ -61,7 +61,7 @@ def rupture_ngs_pipe_kt2(p: Var,
         lam,
         D,
         dx)
-    artifact['q' + pipe_name + '_leak1'] = Ode(f'weno3-q_{pipe_name}__leak_1',
+    artifact['q' + pipe_name + '_leak1'] = Ode(f'kt2-q_{pipe_name}__leak_1',
                                                rhs,
                                                q[2:idx_leak - 2])
     rhs = mol_tvd2_p_eqn_rhs(
@@ -70,7 +70,7 @@ def rupture_ngs_pipe_kt2(p: Var,
         S,
         va,
         dx)
-    artifact['p' + pipe_name + '_leak1'] = Ode(f'weno3-p_{pipe_name}__leak_1',
+    artifact['p' + pipe_name + '_leak1'] = Ode(f'kt2-p_{pipe_name}__leak_1',
                                                rhs,
                                                p[2:idx_leak - 2])
 
@@ -82,7 +82,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                              lam,
                              D,
                              dx)
-    artifact['q' + pipe_name + '_leak6'] = Ode(f'weno3-q_{pipe_name}__leak_6',
+    artifact['q' + pipe_name + '_leak6'] = Ode(f'kt2-q_{pipe_name}__leak_6',
                                                rhs,
                                                q[idx_leak - 2])
     rhs = mol_tvd2_p_eqn_rhs([p[idx_leak - 4], p[idx_leak - 3], p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
@@ -90,7 +90,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                              S,
                              va,
                              dx)
-    artifact['p' + pipe_name + '_leak6'] = Ode(f'weno3-p_{pipe_name}__leak_6',
+    artifact['p' + pipe_name + '_leak6'] = Ode(f'kt2-p_{pipe_name}__leak_6',
                                                rhs,
                                                p[idx_leak - 2])
 
@@ -102,7 +102,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_leak2'] = Ode(f'weno3-q_{pipe_name}__leak_2',
+    artifact['q' + pipe_name + '_leak2'] = Ode(f'kt2-q_{pipe_name}__leak_2',
                                                rhs,
                                                q[idx_leak - 1])
     rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
@@ -110,17 +110,17 @@ def rupture_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_leak2'] = Ode(f'weno3-p_{pipe_name}__leak_2',
+    artifact['p' + pipe_name + '_leak2'] = Ode(f'kt2-p_{pipe_name}__leak_2',
                                                rhs,
                                                p[idx_leak - 1])
     # index = idx_leak
     eqn = S * p[idx_leak] + va * qleak1 + S * p[idx_leak - 2] + va * q[idx_leak - 2] - 2 * (
             S * p[idx_leak - 1] + va * q[idx_leak - 1])
-    artifact['q' + pipe_name + '_leak3_1'] = Eqn(f'weno3-q_{pipe_name}__leak_3_1',
+    artifact['q' + pipe_name + '_leak3_1'] = Eqn(f'kt2-q_{pipe_name}__leak_3_1',
                                                  eqn)
     eqn = (S * p[idx_leak + 2] - va * q[idx_leak + 2] + S * p[idx_leak] - va * qleak2
            - 2 * (S * p[idx_leak + 1] - va * q[idx_leak + 1]))
-    artifact['q' + pipe_name + '_leak3_2'] = Eqn(f'weno3-q_{pipe_name}__leak_3_2',
+    artifact['q' + pipe_name + '_leak3_2'] = Eqn(f'kt2-q_{pipe_name}__leak_3_2',
                                                  eqn)
 
     # index = idx_leak+1
@@ -131,7 +131,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_leak4'] = Ode(f'weno3-q_{pipe_name}__leak_4',
+    artifact['q' + pipe_name + '_leak4'] = Ode(f'kt2-q_{pipe_name}__leak_4',
                                                rhs,
                                                q[idx_leak + 1])
     rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
@@ -139,7 +139,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_leak4'] = Ode(f'weno3-p_{pipe_name}__leak_4',
+    artifact['p' + pipe_name + '_leak4'] = Ode(f'kt2-p_{pipe_name}__leak_4',
                                                rhs,
                                                p[idx_leak + 1])
 
@@ -151,7 +151,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                              lam,
                              D,
                              dx)
-    artifact['q' + pipe_name + '_leak7'] = Ode(f'weno3-q_{pipe_name}__leak_7',
+    artifact['q' + pipe_name + '_leak7'] = Ode(f'kt2-q_{pipe_name}__leak_7',
                                                rhs,
                                                q[idx_leak + 2])
     rhs = mol_tvd2_p_eqn_rhs([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
@@ -159,7 +159,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                              S,
                              va,
                              dx)
-    artifact['p' + pipe_name + '_leak7'] = Ode(f'weno3-p_{pipe_name}__leak_7',
+    artifact['p' + pipe_name + '_leak7'] = Ode(f'kt2-p_{pipe_name}__leak_7',
                                                rhs,
                                                p[idx_leak + 2])
 
@@ -172,7 +172,7 @@ def rupture_ngs_pipe_kt2(p: Var,
         lam,
         D,
         dx)
-    artifact['q' + pipe_name + '_leak5'] = Ode(f'weno3-q_{pipe_name}__leak_5',
+    artifact['q' + pipe_name + '_leak5'] = Ode(f'kt2-q_{pipe_name}__leak_5',
                                                rhs,
                                                q[idx_leak + 3: M - 1])
     rhs = mol_tvd2_p_eqn_rhs(
@@ -181,7 +181,7 @@ def rupture_ngs_pipe_kt2(p: Var,
         S,
         va,
         dx)
-    artifact['p' + pipe_name + '_leak5'] = Ode(f'weno3-p_{pipe_name}__leak_5',
+    artifact['p' + pipe_name + '_leak5'] = Ode(f'kt2-p_{pipe_name}__leak_5',
                                                rhs,
                                                p[idx_leak + 3:M - 1])
     # index = M-1
@@ -192,7 +192,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_eqn3'] = Ode(f'weno3-q_{pipe_name}_3',
+    artifact['q' + pipe_name + '_eqn3'] = Ode(f'kt2-q_{pipe_name}_3',
                                               rhs,
                                               q[M - 1])
     rhs = mol_tvd1_p_eqn_rhs1([p[M - 2], p[M - 1], p[M]],
@@ -200,7 +200,7 @@ def rupture_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_eqn3'] = Ode(f'weno3-p_{pipe_name}_3',
+    artifact['p' + pipe_name + '_eqn3'] = Ode(f'kt2-p_{pipe_name}_3',
                                               rhs,
                                               p[M - 1])
 
@@ -217,10 +217,10 @@ def rupture_ngs_pipe_kt2(p: Var,
                          time_series=tseries)
     artifact['pa'] = pa
 
-    artifact[f'_{pipe_name}_bd1'] = Eqn(f'_{pipe_name}_bd1',
-                                        p[idx_leak] - pa)
-    artifact[f'_{pipe_name}_bd2'] = Eqn(f'_{pipe_name}_bd2',
-                                        qleak1 - qleak2 - q[idx_leak])
+    artifact[f'kt2_{pipe_name}_bd1'] = Eqn(f'pipe_{pipe_name}_bd1',
+                                            p[idx_leak] - pa)
+    artifact[f'kt2_{pipe_name}_bd2'] = Eqn(f'pipe_{pipe_name}_bd2',
+                                            qleak1 - qleak2 - q[idx_leak])
     return artifact
 
 
@@ -265,7 +265,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_eqn2'] = Ode(f'weno3-q_{pipe_name}_2',
+    artifact['q' + pipe_name + '_eqn2'] = Ode(f'kt2-q_{pipe_name}_2',
                                               rhs,
                                               q[1])
     rhs = mol_tvd1_p_eqn_rhs1([p[0], p[1], p[2]],
@@ -273,7 +273,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_eqn2'] = Ode(f'weno3-p_{pipe_name}_2',
+    artifact['p' + pipe_name + '_eqn2'] = Ode(f'kt2-p_{pipe_name}_2',
                                               rhs,
                                               p[1])
     # 2<= index <= idx_leak-3
@@ -285,7 +285,7 @@ def leakage_ngs_pipe_kt2(p: Var,
         lam,
         D,
         dx)
-    artifact['q' + pipe_name + '_leak1'] = Ode(f'weno3-q_{pipe_name}__leak_1',
+    artifact['q' + pipe_name + '_leak1'] = Ode(f'kt2-q_{pipe_name}__leak_1',
                                                rhs,
                                                q[2:idx_leak - 2])
     rhs = mol_tvd2_p_eqn_rhs(
@@ -294,7 +294,7 @@ def leakage_ngs_pipe_kt2(p: Var,
         S,
         va,
         dx)
-    artifact['p' + pipe_name + '_leak1'] = Ode(f'weno3-p_{pipe_name}__leak_1',
+    artifact['p' + pipe_name + '_leak1'] = Ode(f'kt2-p_{pipe_name}__leak_1',
                                                rhs,
                                                p[2:idx_leak - 2])
 
@@ -306,7 +306,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                              lam,
                              D,
                              dx)
-    artifact['q' + pipe_name + '_leak6'] = Ode(f'weno3-q_{pipe_name}__leak_6',
+    artifact['q' + pipe_name + '_leak6'] = Ode(f'kt2-q_{pipe_name}__leak_6',
                                                rhs,
                                                q[idx_leak - 2])
     rhs = mol_tvd2_p_eqn_rhs([p[idx_leak - 4], p[idx_leak - 3], p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
@@ -314,7 +314,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                              S,
                              va,
                              dx)
-    artifact['p' + pipe_name + '_leak6'] = Ode(f'weno3-p_{pipe_name}__leak_6',
+    artifact['p' + pipe_name + '_leak6'] = Ode(f'kt2-p_{pipe_name}__leak_6',
                                                rhs,
                                                p[idx_leak - 2])
 
@@ -326,7 +326,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_leak2'] = Ode(f'weno3-q_{pipe_name}__leak_2',
+    artifact['q' + pipe_name + '_leak2'] = Ode(f'kt2-q_{pipe_name}__leak_2',
                                                rhs,
                                                q[idx_leak - 1])
     rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak - 2], p[idx_leak - 1], p[idx_leak]],
@@ -334,17 +334,17 @@ def leakage_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_leak2'] = Ode(f'weno3-p_{pipe_name}__leak_2',
+    artifact['p' + pipe_name + '_leak2'] = Ode(f'kt2-p_{pipe_name}__leak_2',
                                                rhs,
                                                p[idx_leak - 1])
     # index = idx_leak
     eqn = S * p[idx_leak] + va * qleak1 + S * p[idx_leak - 2] + va * q[idx_leak - 2] - 2 * (
             S * p[idx_leak - 1] + va * q[idx_leak - 1])
-    artifact['q' + pipe_name + '_leak3_1'] = Eqn(f'weno3-q_{pipe_name}__leak_3_1',
+    artifact['q' + pipe_name + '_leak3_1'] = Eqn(f'kt2-q_{pipe_name}__leak_3_1',
                                                  eqn)
     eqn = (S * p[idx_leak + 2] - va * q[idx_leak + 2] + S * p[idx_leak] - va * qleak2
            - 2 * (S * p[idx_leak + 1] - va * q[idx_leak + 1]))
-    artifact['q' + pipe_name + '_leak3_2'] = Eqn(f'weno3-q_{pipe_name}__leak_3_2',
+    artifact['q' + pipe_name + '_leak3_2'] = Eqn(f'kt2-q_{pipe_name}__leak_3_2',
                                                  eqn)
 
     # index = idx_leak+1
@@ -355,7 +355,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_leak4'] = Ode(f'weno3-q_{pipe_name}__leak_4',
+    artifact['q' + pipe_name + '_leak4'] = Ode(f'kt2-q_{pipe_name}__leak_4',
                                                rhs,
                                                q[idx_leak + 1])
     rhs = mol_tvd1_p_eqn_rhs1([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2]],
@@ -363,7 +363,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_leak4'] = Ode(f'weno3-p_{pipe_name}__leak_4',
+    artifact['p' + pipe_name + '_leak4'] = Ode(f'kt2-p_{pipe_name}__leak_4',
                                                rhs,
                                                p[idx_leak + 1])
 
@@ -375,7 +375,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                              lam,
                              D,
                              dx)
-    artifact['q' + pipe_name + '_leak7'] = Ode(f'weno3-q_{pipe_name}__leak_7',
+    artifact['q' + pipe_name + '_leak7'] = Ode(f'kt2-q_{pipe_name}__leak_7',
                                                rhs,
                                                q[idx_leak + 2])
     rhs = mol_tvd2_p_eqn_rhs([p[idx_leak], p[idx_leak + 1], p[idx_leak + 2], p[idx_leak + 3], p[idx_leak + 4]],
@@ -383,7 +383,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                              S,
                              va,
                              dx)
-    artifact['p' + pipe_name + '_leak7'] = Ode(f'weno3-p_{pipe_name}__leak_7',
+    artifact['p' + pipe_name + '_leak7'] = Ode(f'kt2-p_{pipe_name}__leak_7',
                                                rhs,
                                                p[idx_leak + 2])
 
@@ -396,7 +396,7 @@ def leakage_ngs_pipe_kt2(p: Var,
         lam,
         D,
         dx)
-    artifact['q' + pipe_name + '_leak5'] = Ode(f'weno3-q_{pipe_name}__leak_5',
+    artifact['q' + pipe_name + '_leak5'] = Ode(f'kt2-q_{pipe_name}__leak_5',
                                                rhs,
                                                q[idx_leak + 3: M - 1])
     rhs = mol_tvd2_p_eqn_rhs(
@@ -405,7 +405,7 @@ def leakage_ngs_pipe_kt2(p: Var,
         S,
         va,
         dx)
-    artifact['p' + pipe_name + '_leak5'] = Ode(f'weno3-p_{pipe_name}__leak_5',
+    artifact['p' + pipe_name + '_leak5'] = Ode(f'kt2-p_{pipe_name}__leak_5',
                                                rhs,
                                                p[idx_leak + 3:M - 1])
     # index = M-1
@@ -416,7 +416,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               lam,
                               D,
                               dx)
-    artifact['q' + pipe_name + '_eqn3'] = Ode(f'weno3-q_{pipe_name}_3',
+    artifact['q' + pipe_name + '_eqn3'] = Ode(f'kt2-q_{pipe_name}_3',
                                               rhs,
                                               q[M - 1])
     rhs = mol_tvd1_p_eqn_rhs1([p[M - 2], p[M - 1], p[M]],
@@ -424,7 +424,7 @@ def leakage_ngs_pipe_kt2(p: Var,
                               S,
                               va,
                               dx)
-    artifact['p' + pipe_name + '_eqn3'] = Ode(f'weno3-p_{pipe_name}_3',
+    artifact['p' + pipe_name + '_eqn3'] = Ode(f'kt2-p_{pipe_name}_3',
                                               rhs,
                                               p[M - 1])
 
@@ -458,8 +458,8 @@ def leakage_ngs_pipe_kt2(p: Var,
                           (2 * Mass / (Z * R * T0) * Hcr / (Hcr - 1) * (
                                   (Pa / P2) ** (2 / Hcr) - (Pa / P2) ** ((Hcr + 1) / Hcr))) ** (1 / 2))
 
-    artifact[f'kt1_{pipe_name}_bd1'] = Eqn(f'kt1_{pipe_name}_bd1',
+    artifact[f'kt2_{pipe_name}_bd1'] = Eqn(f'kt2_{pipe_name}_bd1',
                                            q[idx_leak] - qjleak)
-    artifact[f'kt1_{pipe_name}_bd2'] = Eqn(f'kt1_{pipe_name}_bd2',
+    artifact[f'kt2_{pipe_name}_bd2'] = Eqn(f'kt2_{pipe_name}_bd2',
                                            qleak1 - qleak2 - q[idx_leak])
     return artifact
