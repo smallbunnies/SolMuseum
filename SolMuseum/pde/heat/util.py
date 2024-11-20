@@ -1,8 +1,7 @@
 from Solverz import Eqn, Ode, AliasVar, TimeSeriesParam, Param
 from Solverz import iVar, idx, Var, Abs
 from Solverz.utilities.type_checker import is_integer, is_number
-
-from Solverz import minmod
+from ..basic import minmod
 
 
 def ux(theta, um1, u, up1, dx):

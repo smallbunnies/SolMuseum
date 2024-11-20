@@ -4,7 +4,9 @@ from Solverz.utilities.type_checker import is_integer, is_number
 from sympy import Add, Mul, Rational, Integer
 import numpy as np
 
+from ..basic import minmod
 from .weno3.weno_pipe import weno_odep, weno_odeq
+
 
 def cdm(p11, p10, p01, p00,
         q11, q10, q01, q00,
@@ -543,15 +545,11 @@ def mol_tvd1_q_eqn_rhs0(p_list, q_list, S, va, lam, D, dx):
             2 * D * S * p0)
 
 
-from Solverz import minmod
-
-
 def ux(theta, um1, u, up1, dx):
     return minmod(theta * (u - um1) / dx, (up1 - um1) / (2 * dx), theta * (up1 - u) / dx)
 
 
 def mol_tvd2_p_eqn_rhs(p_list, q_list, S, va, dx):
-
     pm2, pm1, p0, pp1, pp2 = p_list
     qm2, qm1, q0, qp1, qp2 = q_list
 
@@ -586,7 +584,6 @@ def mol_tvd2_p_eqn_rhs(p_list, q_list, S, va, dx):
 
 
 def mol_tvd2_q_eqn_rhs(p_list, q_list, S, va, lam, D, dx):
-
     pm2, pm1, p0, pp1, pp2 = p_list
     qm2, qm1, q0, qp1, qp2 = q_list
 
