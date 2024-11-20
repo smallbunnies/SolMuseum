@@ -6,6 +6,13 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 from datetime import datetime
+import os
+import sys
+
+sys.path.extend(['..\\..\\SolMuseum'])
+# This command is for linux (Ubuntu 22.04.2 LTS), which cannot recognise relative path of Solverz library.
+sys.path.insert(0, os.path.abspath('../..'))
+sys.path.insert(0, os.path.abspath('../ext'))
 
 project = "Solverz' Museum"
 copyright = f'{datetime.now().year}, rzyu'
