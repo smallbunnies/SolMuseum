@@ -72,7 +72,7 @@ mathjax3_config = {
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'furo'
+# html_theme = 'furo'
 html_title = "Solverz' Museum"
 html_static_path = ['_static']
 html_theme_options = {
