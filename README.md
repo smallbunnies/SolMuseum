@@ -4,12 +4,12 @@
  model instances are initialized without having to derive them symbolically and jit-compile the case-specified numerical
  codes, which saves the computation overhead.
 
-All the models that have been implemented can be found in the [docs](https://www.baidu.com) with mathematical 
+All the models that have been implemented can be found in the [docs](https://solmuseum.solverz.org) with mathematical 
 derivations.
 
 # Installation
 
-Solverz requires ```python>=3.10```, and can be installed locally with
+SolMuseum requires ```python>=3.10```, and can be installed locally with
 
 ```shell
 pip install SolMuseum
@@ -17,7 +17,9 @@ pip install SolMuseum
 
 # Usage Example
 
-For example, we want to perform the finite difference of the heat pipe with the Yao's scheme. The illustrative code 
+For example, we want to perform the finite difference of the heat pipe with the Yao's scheme. The illustrative code
+We can just import the `heat_pipe` class from `SolMuseum.pde`, input the parameters and set the method to be 'yao'. 
+The finite difference equations are automatically derived and added to the `Model` instance.
 snippet is
 
 ```python
@@ -65,8 +67,5 @@ m.__dict__.update(heat_pipe(m.T,
                             method='yao'))
 
 ```
-
-We can just import the `heat_pipe` class from `SolMuseum.pde`, input the parameters and set the method to be 'yao'. 
-The finite difference equations are automatically derived and added to the `Model` instance.
 
 For reproducible codes of each model, please refer to the test folders, which can serve as the detailed tutorials.
