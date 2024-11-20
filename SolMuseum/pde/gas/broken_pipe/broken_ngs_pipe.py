@@ -176,7 +176,7 @@ def leakage_pipe(p: Var,
                 S_\text{h}p_j\sqrt{\frac{M}{ZRT}k\left(\frac{2}{k+1}\right)^{\frac{k+1}{k-1}}} & p_j > {p_\text{sw}}\\
             \end{cases}
 
-    $k$ is the adiabatic coefficient, $M$ is the molar mass of gas, $T$ is 273.15K, $Z$ is the gas
+    where $k$ is the adiabatic coefficient, $M$ is the molar mass of gas, $T$ is 273.15K, $Z$ is the gas
     compressibility factor, $R$ is the ideal gas constant, $S_\text{h}$ is the area of the leakage hole;
 
         .. math::
