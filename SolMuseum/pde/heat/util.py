@@ -1,5 +1,6 @@
 from Solverz import Eqn, Ode, AliasVar, TimeSeriesParam, Param
-from Solverz import iVar, idx, Var, Abs
+from Solverz import Var, Abs
+from Solverz.sym_algebra.symbols import iVar, idx
 from Solverz.utilities.type_checker import is_integer, is_number
 from ..basic import minmod
 
