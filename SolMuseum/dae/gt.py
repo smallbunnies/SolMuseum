@@ -6,8 +6,8 @@ from sympy import re as real, im as imag
 import numpy as np
 from warnings import warn
 
-from synmach import synmach
-from util import rename_mdl
+from .synmach import synmach
+from .util import rename_mdl
 
 
 class gt:

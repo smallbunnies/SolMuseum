@@ -25,7 +25,7 @@ pi = pv(ux=1.06592457,
         sref=1000,
         Ttemp=25,
         UOC=864,
-        UM=688, )
+        UM=688)
 
 pvmdl = pi.mdl()
 pvmdl.eqn_uxpv = Eqn('ux_pv', pvmdl.ux_pv - 1.06592457)
