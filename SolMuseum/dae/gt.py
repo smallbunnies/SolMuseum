@@ -43,6 +43,7 @@ class gt:
         self.b = kwargs.get('b')
         self.TFS = kwargs.get('TFS')
         self.Tref = kwargs.get('Tref')
+        self.c = kwargs.get('c')
 
         self.Tmec = None
         self.kNL = None
@@ -58,6 +59,7 @@ class gt:
         self.xv = None
         self.qf = None
         self.Cop = None
+        self.phi = None
 
     def gt_init(self):
         self.syn.synmach_init()
@@ -78,6 +80,8 @@ class gt:
 
         q = np.minimum(self.qT, np.clip(self.qR, self.qmin, self.qmax))
         self.kNL = (q - self.qfuel) / (q - 1)
+
+        self.phi = self.c * self.syn.Pm
 
     def mdl(self):
         self.gt_init()
@@ -154,6 +158,11 @@ class gt:
         m.ValPos = Ode('Valve Positioner', (m.qfuel - m.xv) / m.b, diff_var=m.xv)
         m.TFS = Param('TFS_' + name, self.TFS)
         m.FuelDyn = Ode('Fuel Dynamics', (m.xv - m.qf) / m.TFS, diff_var=m.qf)
+
+        # Waste heat boiler
+        m.phi = Var('phi_' + name, self.phi)
+        m.c = Param('c_' + name, self.c)
+        m.WastHeatBoiler = Eqn('WastHeatBoiler_' + name, m.phi - m.c * m.Pm)
 
         m = rename_mdl(m, name)
 
