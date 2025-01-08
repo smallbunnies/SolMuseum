@@ -1,13 +1,10 @@
-from Solverz import Eqn, Ode, AliasVar, TimeSeriesParam, Param, Model, Saturation, AntiWindUp, Min
-from Solverz import Var, Abs
-from Solverz.sym_algebra.symbols import iVar, idx
-from Solverz.utilities.type_checker import is_integer, is_number
-from sympy import re as real, im as imag
+from Solverz import Eqn, Ode, Param, Model, Saturation, AntiWindUp, Min
+from Solverz import Var
+from Solverz.utilities.type_checker import is_number
 import numpy as np
-from warnings import warn
 
 from .synmach import synmach
-from .util import rename_mdl
+from ..util import rename_mdl
 
 
 class gt:
@@ -45,12 +42,13 @@ class gt:
         self.TG = kwargs.get('TG')
         self.b = kwargs.get('b')
         self.TFS = kwargs.get('TFS')
+        self.Tref = kwargs.get('Tref')
 
         self.Tmec = None
         self.kNL = None
         self.qT_i = None
         self.qT = None
-        self.Tref = None
+        # self.Tref = None
         self.Tx = None
         self.Tr = None
         self.Tri = None
@@ -73,7 +71,8 @@ class gt:
         self.Tri = self.K2 * self.Te
         self.Tr = self.K1 * self.Te + self.Tri
         self.Tx = self.Tr
-        self.Tref = self.Tx
+        if self.Tref is None:
+            self.Tref = self.Tx
         self.qT = self.qR
         self.qT_i = (self.qT - self.kp * (self.Tref - self.Tx)) / self.ki
 
