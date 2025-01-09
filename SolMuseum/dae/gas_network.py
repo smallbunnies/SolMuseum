@@ -25,7 +25,7 @@ class gas_network:
         va = self.gf.va
         m.D = Param('D', value=self.gf.D)
         m.Area = Param('Area', np.pi * (self.gf.D / 2) ** 2)
-        m.lam = Param('lam', value=self.gf.lam)
+        m.lam_gas_pipe = Param('lam_gas_pipe', value=self.gf.lam)
         L = self.gf.L
         dx = dx
         M = np.floor(L / dx).astype(int)
@@ -76,11 +76,11 @@ class gas_network:
             qj = m.__dict__['q' + str(j)]
             Dj = m.D[j]
             Sj = m.Area[j]
-            lamj = m.lam[j]
+            lam_gas_pipej = m.lam_gas_pipe[j]
 
             ngs_p = ngs_pipe(pj,
                              qj,
-                             lamj,
+                             lam_gas_pipej,
                              va,
                              Dj,
                              Sj,

@@ -96,7 +96,7 @@ class st:
         m.mu1 = Var('mu1_'+name, self.mu1)
         m.Ts = Var('Ts_'+name, self.Ts)
         m.temp_control1 = Ode('temp_control1_'+name,
-                              AntiWindUp(m.mu, m.mu_min, m.mu_max, -(m.TREF - m.Ts)),
+                              AntiWindUp(m.mu, m.mu_min, m.mu_max, (m.TREF - m.Ts)),
                               m.mu1)
         m.temp_control2 = Eqn('temp_control2', m.kp * (m.TREF - m.Ts) + m.ki * m.mu1 - m.mu)
 
