@@ -19,6 +19,7 @@ class heat_network:
 
     def mdl(self,
             dx,
+            dt=0,
             method='kt2',
             dynamic_slack=False):
         m = Model()
@@ -159,7 +160,7 @@ class heat_network:
                             m.S[pipe],
                             m.Tamb,
                             dx,
-                            0,
+                            dt,
                             M[pipe],
                             's'+str(pipe),
                             method=method))
@@ -172,7 +173,7 @@ class heat_network:
                             m.S[pipe],
                             m.Tamb,
                             dx,
-                            0,
+                            dt,
                             M[pipe],
                             'r'+str(pipe),
                             method=method))

@@ -94,15 +94,17 @@ class synmach:
         m.rotator_eqn = Ode(name='rotator_speed' + name,
                             f=(m.Pm - Pe - m.Damping * (m.omega - 1)) / m.Tj,
                             diff_var=m.omega)
-        if self.use_coi:
-            num = 0
-            den = 0
-            for i in range(self.n_mac):
-                num += m.Tj[i] * m.omega[i]
-                den += m.Tj[i]
-            omega_coi = num / den
-        else:
-            omega_coi = 1
+        # if self.use_coi:
+        #     num = 0
+        #     den = 0
+        #     for i in range(self.n_mac):
+        #         num += m.Tj[i] * m.omega[i]
+        #         den += m.Tj[i]
+        #     omega_coi = num / den
+        # else:
+        #     omega_coi = 1
+
+        omega_coi = Var('omega_coi', 1)
 
         m.delta_eq = Ode(f'Delta_equation' + name,
                          self.ws * (m.omega - omega_coi),

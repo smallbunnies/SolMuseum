@@ -141,6 +141,9 @@ def ngs_pipe(p: Var,
 
     artifact = dict()
 
+    if method not in ['kt1', 'kt2', 'weno3'] and dt == 0:
+        raise ValueError('dt must be greater than 0!')
+
     match method:
         case 'euler':
             p0 = AliasVar(p.name, init=p)

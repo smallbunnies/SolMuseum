@@ -17,6 +17,7 @@ class gas_network:
 
     def mdl(self,
             dx,
+            dt=0,
             method='weno3'):
         m = Model()
         m.Pi = Var('Pi', value=self.gf.Pi * 1e6)  # node pressure
@@ -85,7 +86,7 @@ class gas_network:
                              Dj,
                              Sj,
                              dx,
-                             0,
+                             dt,
                              Mj,
                              f'pipe{j}',
                              method=method)

@@ -116,6 +116,9 @@ def heat_pipe(T: Var,
 
     artifact = dict()
 
+    if method not in ['kt2'] and dt == 0:
+        raise ValueError('dt must be greater than 0!')
+
     match method:
         case 'kt2':
             rhs = mol_kt2_rhs(T,
