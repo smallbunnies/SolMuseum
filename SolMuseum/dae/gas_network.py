@@ -4,9 +4,7 @@ from Solverz import Var, Abs
 from Solverz.utilities.type_checker import is_number
 from SolUtil import GasFlow
 
-from ..pde import ngs_pipe
-from warnings import warn
-from ..util import rename_mdl
+from SolMuseum.pde import ngs_pipe
 
 
 class gas_network:

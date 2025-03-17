@@ -4,9 +4,8 @@ from Solverz import Var, Abs, heaviside, exp, Sign
 from Solverz.utilities.type_checker import is_number
 from SolUtil import DhsFlow
 
-from ..pde import heat_pipe
+from SolMuseum.pde import heat_pipe
 from warnings import warn
-from ..util import rename_mdl
 
 
 class heat_network:
