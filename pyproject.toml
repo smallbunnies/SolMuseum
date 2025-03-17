@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 version_file = "SolMuseum/_version.py"
 
 [tool.pytest.ini_options]
-addopts = "-vv -n auto"
+#addopts = "-vv -n auto"
 
 [project]
 name = "SolMuseum"

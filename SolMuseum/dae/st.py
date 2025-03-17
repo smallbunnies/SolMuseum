@@ -4,8 +4,8 @@ from Solverz.utilities.type_checker import is_number
 import numpy as np
 from warnings import warn
 
-from .synmach import synmach
-from ..util import rename_mdl
+from SolMuseum.dae.synmach import synmach
+from SolMuseum.util import rename_mdl
 
 
 class st:

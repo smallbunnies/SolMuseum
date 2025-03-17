@@ -5,7 +5,7 @@ from Solverz.num_api.Array import Array
 from sympy import re as real, im as imag
 import numpy as np
 from warnings import warn
-from ..util import rename_mdl
+from SolMuseum.util import rename_mdl
 
 
 class pv:
