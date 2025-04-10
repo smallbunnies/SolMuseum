@@ -121,48 +121,20 @@ def heat_pipe(T: Var,
 
     match method:
         case 'kt2':
-            rhs = mol_kt2_rhs(T,
-                              m,
-                              lam,
-                              rho,
-                              Cp,
-                              S,
-                              Tamb,
-                              dx,
-                              1,
-                              2,
-                              order=1)
+            theta = Param('theta', 1)
+            rhs = kt1_ode(T[0:1], T[1:2], m, lam, rho, Cp, S, Tamb, dx)
             artifact['T' + pipe_name + '_eqn1'] = Ode(f'heat_pipe_kt2_T{pipe_name}_1',
                                                       rhs,
-                                                      T[1])
-            rhs = mol_kt2_rhs(T,
-                              m,
-                              lam,
-                              rho,
-                              Cp,
-                              S,
-                              Tamb,
-                              dx,
-                              2,
-                              M,
-                              order=2)
+                                                      T[1:2])
+
+            rhs = kt2_ode(T[0:M-2], T[1:M-1], T[2:M], T[3:M+1], m, lam, rho, Cp, S, Tamb, theta, dx)
             artifact['T' + pipe_name + '_eqn2'] = Ode(f'heat_pipe_kt2_T{pipe_name}_2',
                                                       rhs,
                                                       T[2:M])
-            rhs = mol_kt2_rhs(T,
-                              m,
-                              lam,
-                              rho,
-                              Cp,
-                              S,
-                              Tamb,
-                              dx,
-                              M,
-                              M+1,
-                              order=1)
+            rhs = kt1_ode(T[M-1:M], T[M:M+1], m, lam, rho, Cp, S, Tamb, dx)
             artifact['T' + pipe_name + '_eqn3'] = Ode(f'heat_pipe_kt2_T{pipe_name}_3',
                                                       rhs,
-                                                      T[M])
+                                                      T[M:M+1])
             artifact['theta'] = Param('theta', 1)
         case 'iu':
             if is_number(dt):

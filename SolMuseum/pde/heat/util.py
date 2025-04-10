@@ -3,6 +3,8 @@ from Solverz import Var, Abs
 from Solverz.sym_algebra.symbols import iVar, idx
 from Solverz.utilities.type_checker import is_integer, is_number
 from ..basic import minmod
+from ..heat.kt2.kt2_pipe import kt2_ode
+from ..heat.kt1.kt1_pipe import kt1_ode
 
 
 def ux(theta, um1, u, up1, dx):
