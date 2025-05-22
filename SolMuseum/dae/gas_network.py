@@ -65,7 +65,7 @@ class gas_network:
 
         for i in self.gf.slack:
             m.__dict__[f'node_pressure_{i}'] = Eqn(f'node_pressure_{i}',
-                                                   m.Pi[i] - self.gf.Pi_slack[self.gf.slack.tolist().index(i)]*1e6)
+                                                   m.Pi[i] - self.gf.Piset[self.gf.slack.tolist().index(i)]*1e6)
 
         # difference and initialize variables
         for edge in self.gf.gc['G'].edges(data=True):

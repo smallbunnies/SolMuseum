@@ -47,17 +47,17 @@ class st:
         # heat to power
         # st initialization first then st
 
-        self.Pm = self.eta*self.F-self.z*self.phi
+        self.Pm = self.eta * self.F - self.z * self.phi
         self.x1 = self.Pm
-        self.x2 = self.Pm - self.alpha*self.x1
+        self.x2 = self.Pm - self.alpha * self.x1
         self.mu = self.x1
         self.Ts = self.TREF
-        self.mu1 = self.mu/self.ki
+        self.mu1 = self.mu / self.ki
 
         self.syn.synmach_init()
 
         if not np.all(np.isclose(self.Pm, self.syn.Pm, atol=1e-6, rtol=1e-4)):
-            warn(f"Pm output and grid injection not match, with deviation {np.abs(self.Pm-self.syn.Pm)}. "
+            warn(f"Pm output and grid injection not match, with deviation {np.abs(self.Pm - self.syn.Pm)}. "
                  "Please calculate ST output and perform the power flow first!")
 
     def mdl(self):
@@ -70,33 +70,41 @@ class st:
         m.__dict__.update(synmdl.__dict__)
 
         # volumn
-        m.x1 = Var('x1_'+name, self.x1)
-        m.x2 = Var('x2_'+name, self.x2)
-        m.mu = Var('mu_'+name, self.mu)
-        m.mu_min = Param('mu_min_'+name, self.mu_min)
-        m.mu_max = Param('mu_max_'+name, self.mu_max)
-        m.TCH = Param('TCH_'+name, self.TCH)
-        m.alpha = Param('alpha_'+name, self.alpha)
-        m.TRH = Param('TRH_'+name, self.TRH)
-        m.volumn1 = Ode('volumn1_'+name, (Saturation(m.mu, m.mu_min, m.mu_max) - m.x1) / m.TCH, m.x1)
-        m.volumn2 = Ode('volumn2_'+name, (m.x1 * (1 - m.alpha) - m.x2) / m.TRH, m.x2)
+        m.x1 = Var('x1_' + name, self.x1)
+        m.x2 = Var('x2_' + name, self.x2)
+        m.mu = Var('mu_' + name, self.mu)
+        m.mu_min = Param('mu_min_' + name, self.mu_min)
+        m.mu_max = Param('mu_max_' + name, self.mu_max)
+        m.TCH = Param('TCH_' + name, self.TCH)
+        m.alpha = Param('alpha_' + name, self.alpha)
+        m.TRH = Param('TRH_' + name, self.TRH)
+        m.volumn1 = Ode('volumn1_' + name, (Saturation(m.mu, m.mu_min, m.mu_max) - m.x1) / m.TCH, m.x1)
+        m.volumn2 = Ode('volumn2_' + name, (m.x1 * (1 - m.alpha) - m.x2) / m.TRH, m.x2)
         m.eqn_Pm = Eqn('eqn_Pm', m.Pm - m.alpha * m.x1 - m.x2)
 
         # CHP
-        m.z = Param('z_'+name, self.z)
-        m.eta = Param('eta_'+name, self.eta)
-        m.F = Param('F_'+name, self.F)
-        m.phi = Var('phi_'+name, self.phi)
-        m.chp = Eqn('chp', m.eta*m.F - m.Pm - m.z*m.phi)
+        m.z = Param('z_' + name, self.z)
+        m.eta = Param('eta_' + name, self.eta)
+        m.F = Param('F_' + name, self.F)
+        m.phi = Var('phi_' + name, self.phi)
+        m.chp = Eqn('chp', m.eta * m.F - m.Pm - m.z * m.phi)
 
         # temperature control
-        m.ki = Param('ki_'+name, self.ki)
-        m.kp = Param('kp_'+name, self.kp)
-        m.TREF = Param('TREF_'+name, self.TREF)
-        m.mu1 = Var('mu1_'+name, self.mu1)
-        m.Ts = Var('Ts_'+name, self.Ts)
-        m.temp_control1 = Ode('temp_control1_'+name,
-                              AntiWindUp(m.mu, m.mu_min, m.mu_max, (m.TREF - m.Ts)),
+        m.ki = Param('ki_' + name, self.ki)
+        m.kp = Param('kp_' + name, self.kp)
+        m.TREF = Param('TREF_' + name, self.TREF)
+        m.mu1 = Var('mu1_' + name, self.mu1)
+        m.Ts = Var('Ts_' + name, self.Ts)
+        from Solverz.sym_algebra.functions import Not, Or, And, GreaterThan, LessThan
+        e = m.TREF - m.Ts
+        # The current implementation of the Anti-windup limiter handle the ki<0 case.
+        rhs = e * Not(Or(And(GreaterThan(m.mu, m.mu_max),
+                             LessThan(e, 0)),
+                         And(LessThan(m.mu, m.mu_min),
+                             GreaterThan(e, 0))
+                         ))
+        m.temp_control1 = Ode('temp_control1_' + name,
+                              rhs,
                               m.mu1)
         m.temp_control2 = Eqn('temp_control2', m.kp * (m.TREF - m.Ts) + m.ki * m.mu1 - m.mu)
 
