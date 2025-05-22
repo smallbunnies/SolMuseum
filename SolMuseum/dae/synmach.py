@@ -89,10 +89,11 @@ class synmach:
         m.ra = Param('ra_' + name, self.ra)
         m.xdp = Param('xdp_' + name, self.xdp)
         m.xqp = Param('xqp_' + name, self.xqp)
+        m.status = Param('status_' + name, np.ones_like(self.Pm))
 
         Pe = m.ux * m.ix + m.uy * m.iy + (m.ix ** 2 + m.iy ** 2) * m.ra
         m.rotator_eqn = Ode(name='rotator_speed' + name,
-                            f=(m.Pm - Pe - m.Damping * (m.omega - 1)) / m.Tj,
+                            f=(m.Pm - Pe - m.Damping * (m.omega - 1)) / m.Tj * m.status,
                             diff_var=m.omega)
         if self.use_coi:
             omega_coi = Var('omega_coi', 1)
@@ -100,14 +101,18 @@ class synmach:
             omega_coi = 1
 
         m.delta_eq = Ode(f'Delta_equation' + name,
-                         self.ws * (m.omega - omega_coi),
+                         self.ws * (m.omega - omega_coi) * m.status,
                          diff_var=m.delta)
+        Edp_eqn = (m.Edp - sin(m.delta) * (m.ux + m.ra * m.ix - m.xqp * m.iy)
+                   + cos(m.delta) * (m.uy + m.ra * m.iy + m.xqp * m.ix))
+        Active_eqn = m.ux * m.ix + m.uy * m.iy
         m.Ed_prime = Eqn(name='Ed_prime' + name,
-                         eqn=(m.Edp - sin(m.delta) * (m.ux + m.ra * m.ix - m.xqp * m.iy)
-                              + cos(m.delta) * (m.uy + m.ra * m.iy + m.xqp * m.ix)))
+                         eqn=Edp_eqn * m.status + Active_eqn * (1 - m.status))
+        Eqp_eqn = (m.Eqp - cos(m.delta) * (m.ux + m.ra * m.ix - m.xdp * m.iy)
+                   - sin(m.delta) * (m.uy + m.ra * m.iy + m.xdp * m.ix))
+        Reactive_eqn = m.uy * m.ix - m.ux * m.iy
         m.Eq_prime = Eqn(name='Eq_prime' + name,
-                         eqn=(m.Eqp - cos(m.delta) * (m.ux + m.ra * m.ix - m.xdp * m.iy)
-                              - sin(m.delta) * (m.uy + m.ra * m.iy + m.xdp * m.ix)))
+                         eqn=Eqp_eqn * m.status + Reactive_eqn * (1 - m.status))
 
         if rename:
             m = rename_mdl(m, name)
