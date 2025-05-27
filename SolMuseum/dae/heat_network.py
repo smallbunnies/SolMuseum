@@ -47,14 +47,14 @@ class heat_network:
 
             # supply pipe
             Tstart = self.df.Ts[self.df.pipe_from[j]]
-            Tend = (Tstart-Tamb[0])*attenuation+Tamb[0]
+            Tend = (Tstart - Tamb[0]) * attenuation + Tamb[0]
             Tsp0 = np.linspace(Tstart,
                                Tend,
                                M[j] + 1)
 
             # return pipe
             Tstart = self.df.Tr[self.df.pipe_to[j]]
-            Tend = (Tstart-Tamb[0])*attenuation+Tamb[0]
+            Tend = (Tstart - Tamb[0]) * attenuation + Tamb[0]
             Trp0 = np.linspace(Tstart,
                                Tend,
                                M[j] + 1)
@@ -84,7 +84,7 @@ class heat_network:
 
         # loop pressure
         rhs = 0
-        if len(self.df.pinloop) > 0:
+        if len(self.df.pinloop) > 0 and not np.all(self.df.pinloop == 0):
             m.K = Param('K', self.df.K)
             for i in range(self.df.n_pipe):
                 rhs += m.K[i] * m.m[i] ** 2 * Sign(m.m[i]) * self.df.pinloop[i]
@@ -161,7 +161,7 @@ class heat_network:
                             dx,
                             dt,
                             M[pipe],
-                            's'+str(pipe),
+                            's' + str(pipe),
                             method=method))
             Trpj = m.__dict__[f'Trp_{pipe}']
             m.add(heat_pipe(Trpj,
@@ -174,7 +174,7 @@ class heat_network:
                             dx,
                             dt,
                             M[pipe],
-                            'r'+str(pipe),
+                            'r' + str(pipe),
                             method=method))
 
         # heat power
