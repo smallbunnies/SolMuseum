@@ -1,10 +1,17 @@
 import numpy as np
-from Solverz import Var, Param, Model, made_numerical, TimeSeriesParam, Rodas, Eqn, Opt, Rodas
+from Solverz import Var, Param, Model, made_numerical, TimeSeriesParam, Rodas, Eqn, Opt, fdae_solver
 from SolMuseum.pde import ngs_pipe
 import pandas as pd
+import pytest
 
+METHODS = ['weno3', 'cdm', 'cha', 'euler', 'kt1', 'kt2']
 
-def test_kt2(shared_datadir):
+@pytest.mark.parametrize('method', METHODS)
+def test_normal_pipe(method,
+                     shared_datadir,
+                     rtol,
+                     atol):
+
     # %% mdl
     L = 51000
     p0 = 6621246.69079594
@@ -15,8 +22,11 @@ def test_kt2(shared_datadir):
     lam = 0.03
     dx = 500
 
-    # def test_cha(datadir):
-    dt = 60
+    if method == 'cha':
+        dt = 1.4706
+    else:
+        dt = 60
+
     M = int(L / dx)
     m1 = Model()
     m1.p = Var('p', value=p0 * np.ones((M + 1,)))
@@ -32,7 +42,7 @@ def test_kt2(shared_datadir):
                                 dt,
                                 M,
                                 '1',
-                                method='kt2'))
+                                method=method))
 
     T = 5 * 3600
     pb1 = 1e6
@@ -45,38 +55,24 @@ def test_kt2(shared_datadir):
     m1.qb = Param('qb', q0)
     m1.bd1 = Eqn('bd1', m1.p[0] - m1.pb)
     m1.bd2 = Eqn('bd2', m1.q[M] - m1.qb)
-    dae, y0 = m1.create_instance()
-    ndae, code = made_numerical(dae, y0, sparse=True, output_code=True)
 
-    # %% solution
-    sol = Rodas(ndae,
-                np.linspace(0, T, 301),
-                y0)
-
-    # import matplotlib.pyplot as plt
-    # plt.plot(sol.T, sol.Y['p'][:, 0])
-    # plt.plot(sol.T, sol.Y['p'][:, -1])
-    # plt.show()
-    #
-    # plt.plot(sol.T, sol.Y['q'][:, 0])
-    # plt.plot(sol.T, sol.Y['q'][:, -1])
-    # plt.show()
-    #
-    # res = dict()
-    # res['pout'] = sol.Y['p'][:, -1]
-    # res['qin'] = sol.Y['q'][:, 0]
-    # df = pd.DataFrame(res)
-    #
-    # with pd.ExcelWriter(f'res0.xlsx', engine='openpyxl', mode='a') as writer:
-    #     # Write each DataFrame to a different sheet
-    #     df.to_excel(writer, sheet_name='kt2')
+    if method in ['cdm', 'euler', 'cha']:
+        fdae, y0 = m1.create_instance()
+        nfdae, code = made_numerical(fdae, y0, sparse=True, output_code=True)
+        sol = fdae_solver(nfdae, [0, T], y0, Opt(step_size=dt))
+    elif method in ['kt1', 'kt2', 'weno3']:
+        dae, y0 = m1.create_instance()
+        ndae, code = made_numerical(dae, y0, sparse=True, output_code=True)
+        sol = Rodas(ndae,
+                    np.linspace(0, T, 301),
+                    y0)
 
     df = pd.read_excel(shared_datadir / 'res0.xlsx',
-                       sheet_name='kt2',
+                       sheet_name=method,
                        engine='openpyxl',
                        index_col=None
                        )
     qin = np.asarray(df['qin'])
     pout = np.asarray(df['pout'])
-    np.testing.assert_allclose(qin, sol.Y['q'][:, 0])
-    np.testing.assert_allclose(pout, sol.Y['p'][:, -1])
+    np.testing.assert_allclose(qin, sol.Y['q'][:, 0], rtol=rtol, atol=atol)
+    np.testing.assert_allclose(pout, sol.Y['p'][:, -1], rtol=rtol, atol=atol)

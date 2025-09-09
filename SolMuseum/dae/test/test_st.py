@@ -8,7 +8,8 @@ F = 1.1
 phi = (eta * F - 0.27159153) / z
 
 
-def test_st():
+def test_st(rtol,
+            atol):
     # st_instance
     mi = st(ux=1.03554323,
             uy=0.07647195,
@@ -56,5 +57,5 @@ def test_st():
                                          1.055899e-01, 1.000000e+00, 3.643350e-01, 3.643349e-01,
                                          2.550345e-01, 3.643349e-01, 6.256650e+06, -3.643349e-01,
                                          8.500000e+01]),
-                               atol=1e-6,
-                               rtol=1e-6)
+                               rtol=rtol,
+                               atol=atol)

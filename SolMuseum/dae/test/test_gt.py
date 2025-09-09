@@ -3,7 +3,8 @@ from SolMuseum.dae.gt import gt
 import numpy as np
 
 
-def test_gt():
+def test_gt(rtol,
+            atol):
     # gt_instance
     mi = gt(ux=1.03554323,
             uy=0.07647195,
@@ -57,6 +58,6 @@ def test_gt():
                                          3.70977146e-01, 8.00314511e+02, 1.20047177e+02, 8.00314511e+02,
                                          -2.88241095e-16, -1.00534453e-17, 3.70977146e-01, 2.71591535e-01,
                                          -2.53519054e-17, 3.70977146e-01, 3.70977146e-01, 2.71591535e+07]),
-                               rtol=1e-6,
-                               atol=1e-6
+                               rtol=rtol,
+                               atol=atol
                                )

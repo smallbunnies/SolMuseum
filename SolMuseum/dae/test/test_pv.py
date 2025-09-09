@@ -3,7 +3,8 @@ from SolMuseum.dae.pv import pv
 import numpy as np
 
 
-def test_pv():
+def test_pv(rtol,
+            atol):
     # pv_instance
     pi = pv(ux=1.06592457,
             uy=0.18958303,
@@ -50,5 +51,5 @@ def test_pv():
                                np.array([-4.48678072e-07, -6.92144523e-08, 4.57165470e-08, 2.95659269e-09,
                                          9.70079470e-08, -4.86308451e-03, 9.38277776e-05, 2.97815461e-07,
                                          -5.01186393e-02, 0.00000000e+00, 0.00000000e+00]),
-                               atol=1e-6,
-                               rtol=1e-3)
+                               atol=rtol,
+                               rtol=atol)
