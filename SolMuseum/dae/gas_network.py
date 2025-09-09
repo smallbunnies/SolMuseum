@@ -4,7 +4,7 @@ from Solverz import Var, Abs
 from Solverz.utilities.type_checker import is_number
 from SolUtil import GasFlow
 
-from SolMuseum.pde import ngs_pipe
+from SolMuseum.pde import ngs_pipe, leakage_pipe, rupture_pipe
 
 
 class gas_network:
@@ -16,7 +16,11 @@ class gas_network:
     def mdl(self,
             dx,
             dt=0,
-            method='weno3'):
+            method='weno3',
+            fault_type=None,
+            fault_pipe_index=[],
+            fault_loc_index=[],
+            leak_diameter=[]):
         m = Model()
         m.Pi = Var('Pi', value=self.gf.Pi * 1e6)  # node pressure
         m.fs = Var('fs', value=self.gf.fs)
@@ -77,17 +81,49 @@ class gas_network:
             Sj = m.Area[j]
             lam_gas_pipej = m.lam_gas_pipe[j]
 
-            ngs_p = ngs_pipe(pj,
-                             qj,
-                             lam_gas_pipej,
-                             va,
-                             Dj,
-                             Sj,
-                             dx,
-                             dt,
-                             Mj,
-                             f'pipe{j}',
-                             method=method)
+            if j not in fault_pipe_index:
+                ngs_p = ngs_pipe(pj,
+                                 qj,
+                                 lam_gas_pipej,
+                                 va,
+                                 Dj,
+                                 Sj,
+                                 dx,
+                                 dt,
+                                 Mj,
+                                 f'pipe{j}',
+                                 method=method)
+            else:
+                id_fault = fault_pipe_index.index(j)
+                if fault_type == 'leakage':
+                    ngs_p = leakage_pipe(pj,
+                                         qj,
+                                         lam_gas_pipej,
+                                         va,
+                                         Dj,
+                                         Sj,
+                                         dx,
+                                         dt,
+                                         Mj,
+                                         f'pipe{j}_leakage',
+                                         fault_loc_index[id_fault],
+                                         leak_diameter[id_fault],
+                                         method=method)
+                elif fault_type == 'rupture':
+                    ngs_p = rupture_pipe(pj,
+                                         qj,
+                                         lam_gas_pipej,
+                                         va,
+                                         Dj,
+                                         Sj,
+                                         dx,
+                                         dt,
+                                         Mj,
+                                         f'pipe{j}_rupture',
+                                         fault_loc_index[id_fault],
+                                         method=method)
+                else:
+                    raise ValueError(f'Fault type {fault_type} not supported!')
 
             for key, value in ngs_p.items():
                 m.__dict__[key] = value
