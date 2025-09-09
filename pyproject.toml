@@ -12,8 +12,7 @@ addopts = "-vv -n auto"
 name = "SolMuseum"
 dynamic = ["version"]
 dependencies = [
-    "Solverz",
-    "matplotlib > 3.9.0"
+    "Solverz"
 ]
 authors = [
     { name = "Ruizhi Yu", email = "rz.yu@foxmail.com" },
