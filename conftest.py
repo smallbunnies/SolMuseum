@@ -6,11 +6,11 @@ import os
 
 @pytest.fixture
 def rtol():
-    return 1e-3
+    return 1e-5
 
 @pytest.fixture
 def atol():
-    return 1e-1
+    return 1e-8
 
 @pytest.fixture
 def os_name(request):

@@ -78,8 +78,8 @@ def test_leak_pipe(method,
                        )
     qin = np.asarray(df['qin'])
     pout = np.asarray(df['pout'])
-    np.testing.assert_allclose(qin, sol.Y['q'][:, 0], rtol=rtol, atol=atol)
-    np.testing.assert_allclose(pout, sol.Y['p'][:, -1], rtol=rtol, atol=atol)
+    np.testing.assert_allclose(sol.Y['q'][:, 0], qin, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(sol.Y['p'][:, -1], pout, rtol=rtol, atol=atol)
     if method in ['cdm', 'kt2', 'kt1']:
         qupstream = np.asarray(df['qupstream'])
-        np.testing.assert_allclose(qupstream, sol.Y['q_1_leak1'].reshape(-1), rtol=rtol, atol=atol)
+        np.testing.assert_allclose(sol.Y['q_1_leak1'].reshape(-1), qupstream, rtol=rtol, atol=atol)

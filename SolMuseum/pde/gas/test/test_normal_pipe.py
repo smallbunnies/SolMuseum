@@ -75,5 +75,5 @@ def test_normal_pipe(method,
                        )
     qin = np.asarray(df['qin'])
     pout = np.asarray(df['pout'])
-    np.testing.assert_allclose(qin, sol.Y['q'][:, 0], rtol=rtol, atol=atol)
-    np.testing.assert_allclose(pout, sol.Y['p'][:, -1], rtol=rtol, atol=atol)
+    np.testing.assert_allclose(sol.Y['q'][:, 0], qin, rtol=rtol, atol=atol)
+    np.testing.assert_allclose(sol.Y['p'][:, -1], pout, rtol=rtol, atol=atol)
