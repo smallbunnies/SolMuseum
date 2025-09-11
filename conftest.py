@@ -19,10 +19,7 @@ def os_name(request):
     system = platform.system()
     filename = ""
     if system == "Windows":
-        if "2022" in platform.release():
-            sysname = "windows_2022"
-        else:
-            sysname = "windows_2025"
+        sysname = "windows_2022"
     elif system == "Darwin":
         sysname = "macos_15"
     else:
