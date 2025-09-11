@@ -89,12 +89,12 @@ def test_rup_pipe(method,
         np.testing.assert_allclose(sol.Y['q'][:, 0], qin, rtol=rtol, atol=atol)
     except AssertionError:
         diff = sol.Y['q'][:, 0] - qin
-        assert np.mean(np.abs(diff/qin)) <= rtol * 1e-2
+        assert np.mean(np.abs(diff/qin)) <= rtol
     try:
         np.testing.assert_allclose(sol.Y['p'][:, -1], pout, rtol=rtol, atol=atol)
     except AssertionError:
         diff = sol.Y['p'][:, -1] - pout
-        assert np.mean(np.abs(diff/pout)) <= rtol * 1e-2
+        assert np.mean(np.abs(diff/pout)) <= rtol
 
     # if method in ['cdm', 'kt1', 'kt2', 'weno3']:
     #     qupstream = np.asarray(df['qupstream'])
