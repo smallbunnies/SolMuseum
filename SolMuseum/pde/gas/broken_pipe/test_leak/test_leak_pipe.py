@@ -11,6 +11,7 @@ METHODS = ['weno3', 'cdm', 'cha', 'euler', 'kt1', 'kt2']
 @pytest.mark.parametrize('method', METHODS)
 def test_leak_pipe(method,
                    shared_datadir,
+                   os_name,
                    rtol,
                    atol):
     # %%
@@ -70,7 +71,7 @@ def test_leak_pipe(method,
     elif method in ['kt1', 'kt2', 'weno3']:
         sol = Rodas(nmdl, np.linspace(0, T, 401), y0, Opt(pbar=True))
 
-    df = pd.read_excel(shared_datadir / 'res.xlsx',
+    df = pd.read_excel(shared_datadir / f'res_{os_name}.xlsx',
                        sheet_name=method,
                        engine='openpyxl',
                        index_col=None

@@ -36,7 +36,7 @@ def test_pv(rtol,
     pvmdl.eqn_uypv = Eqn('uy_pv', pvmdl.uy_pv - 0.18958303)
 
     sdae, y0 = pvmdl.create_instance()
-    dae = made_numerical(sdae, y0, sparse=True)
+    dae, code = made_numerical(sdae, y0, sparse=True, output_code=True)
 
     dae.p['Sfluc_pv'] = TimeSeriesParam('Sfluc_pv',
                                         [1, 0.8, 0.8, 0.8],

@@ -9,6 +9,7 @@ METHODS = ['weno3', 'cdm', 'cha', 'euler', 'kt1', 'kt2']
 @pytest.mark.parametrize('method', METHODS)
 def test_normal_pipe(method,
                      shared_datadir,
+                     os_name,
                      rtol,
                      atol):
 
@@ -67,7 +68,7 @@ def test_normal_pipe(method,
                     np.linspace(0, T, 301),
                     y0)
 
-    df = pd.read_excel(shared_datadir / 'res0.xlsx',
+    df = pd.read_excel(shared_datadir / f'res_{os_name}.xlsx',
                        sheet_name=method,
                        engine='openpyxl',
                        index_col=None
