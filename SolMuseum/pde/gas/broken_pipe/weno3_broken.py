@@ -453,10 +453,10 @@ def leakage_ngs_pipe_weno3(p: Var,
                                                 M - 2] - 2 * (S * p[M - 1] + va * q[M - 1]))
 
     P2 = p[idx_leak]
-    leak_rate = TimeSeriesParam('leak_rate',
+    leak_rate = TimeSeriesParam('leak_rate' + '_' + pipe_name,
                                 v_series=[0, 0],
                                 time_series=[0, 3 * 3600])
-    artifact['leak_rate'] = leak_rate
+    artifact[leak_rate.name] = leak_rate
 
     C0 = 0.61
     T0 = 293

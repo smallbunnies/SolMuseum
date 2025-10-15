@@ -62,7 +62,7 @@ def test_leak_pipe(method,
     smdl, y0 = m.create_instance()
     nmdl, code = made_numerical(smdl, y0, output_code=True, sparse=True)
 
-    nmdl.p['leak_rate'] = TimeSeriesParam('leak_rate',
+    nmdl.p['leak_rate_1'] = TimeSeriesParam('leak_rate_1',
                                           v_series=[0, 0, 1, 1],
                                           time_series=[0, 100, 105, 3600])
 
