@@ -206,7 +206,8 @@ class fault_heat_network:
     def mdl(self,
             dx=None,
             dt=0,
-            method='kt2'):
+            method='kt2',
+            leakage_diameter=None):
         dff = self.dff
 
         m = Model()
@@ -217,7 +218,12 @@ class fault_heat_network:
         m.mr = Var('mr', dff.mr)
         m.K = Param('K', dff.HydraSup.c)
         m.m_leak = Var('m_leak', dff.yf0['m_leak'])
-        m.S_leak = Param('S_leak', dff.df.S[dff.fault_pipe])
+
+        if leakage_diameter is None:
+            m.S_leak = Param('S_leak', dff.df.S[dff.fault_pipe])
+        else:
+            m.S_leak = Param('S_leak', np.pi*leakage_diameter**2/4)
+
         m.g = Param('g', 10)
         m.Hs = Var('Hs', dff.Hs)
         m.Hr = Var('Hr', dff.Hr)
@@ -235,7 +241,7 @@ class fault_heat_network:
         m.Ls = Param('Ls', dff.mdl_full.p['Ls'])
         m.Lr = Param('Lr', dff.mdl_full.p['Lr'])
         m.Cp = Param('Cp', 4182)
-        m.Ts_slack = Var('Ts_slack', dff.Ts[0])
+        m.Ts_slack = Var('Ts_slack', dff.df.Ts[dff.df.slack_node])
         m.rho = Param('rho', 958.4)
 
         lam = m.lam.value
@@ -469,3 +475,5 @@ class fault_heat_network:
                 rhs = m.min[node]
 
             m.__dict__[f'phi_{node}'] = Eqn(f"phi_{node}", rhs)
+
+        return m
