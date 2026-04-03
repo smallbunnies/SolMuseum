@@ -76,6 +76,10 @@ def rupture_pipe(p: Var,
     if not is_number(idx_leak):
         raise TypeError(f'idx_leak is {type(idx_leak)} instead of number')
 
+    if is_number(dt):
+        if dt <= 0:
+            raise ValueError(f'dt is {dt} cannot be less than 0')
+
     match method:
         case 'euler':
             return rupture_ngs_pipe_Euler(p,
@@ -230,6 +234,10 @@ def leakage_pipe(p: Var,
 
     if not is_number(idx_leak):
         raise TypeError(f'idx_leak is {type(idx_leak)} instead of number')
+
+    if is_number(dt):
+        if dt <=0:
+            raise ValueError(f'dt is {dt} cannot be less than 0')
 
     match method:
         case 'euler':
