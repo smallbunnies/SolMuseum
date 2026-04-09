@@ -7,3 +7,4 @@ SolMuseum/_version.py
 /SolMuseum/num_api/pde/__pycache__
 *.nbc
 *.nbi
+CLAUDE.md
