@@ -121,6 +121,12 @@ def heat_pipe(T: Var,
 
     match method:
         case 'kt2':
+            if M < 3:
+                raise ValueError(
+                    f"M must be at least 3 for kt2 discretization scheme, but got M={M} "
+                    f"for pipe '{pipe_name}'. Consider using a smaller dx value"
+                )
+
             theta = Param('theta', 1)
             rhs = kt1_ode(T[0:1], T[1:2], m, lam, rho, Cp, S, Tamb, dx)
             artifact['T' + pipe_name + '_eqn1'] = Ode(f'heat_pipe_kt2_T{pipe_name}_1',
