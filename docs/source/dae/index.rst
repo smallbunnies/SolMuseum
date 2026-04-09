@@ -11,3 +11,4 @@ Contents
    :titlesonly:
 
 
+   battery_gfm

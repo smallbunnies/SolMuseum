@@ -1,8 +1,14 @@
-import pytest
+import os
 import platform
+import tempfile
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-import os
+import pytest
+
+TEMP_ROOT = Path(tempfile.gettempdir())
+os.environ.setdefault("NUMBA_CACHE_DIR", str(TEMP_ROOT / "numba-cache"))
 
 @pytest.fixture
 def rtol():

@@ -4,3 +4,4 @@ from .st import st
 from .pv import pv
 from .gas_network import gas_network
 from .heat_network import heat_network, fault_heat_network
+from .battery_gfm import battery_gfm
