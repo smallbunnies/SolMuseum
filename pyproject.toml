@@ -28,6 +28,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
+[project.entry-points."solverz.num_api"]
+SolMF = "SolMuseum.num_api"
+
 [project.urls]
 Homepage = "https://github.com/smallbunnies/SolMuseum"
 Issues = "https://github.com/smallbunnies/SolMuseum/issues"
