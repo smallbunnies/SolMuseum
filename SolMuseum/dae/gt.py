@@ -167,7 +167,3 @@ class gt:
         m = rename_mdl(m, name)
 
         return m
-
-
-
-

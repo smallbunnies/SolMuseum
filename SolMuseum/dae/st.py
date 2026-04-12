@@ -27,6 +27,7 @@ class st:
         self.z = kwargs.get('z')
         self.F = kwargs.get('F')
         self.eta = kwargs.get('eta')
+
         self.TREF = kwargs.get('TREF')
         self.alpha = kwargs.get('alpha')
         self.mu_min = kwargs.get('mu_min')

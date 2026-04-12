@@ -458,6 +458,11 @@ def leakage_ngs_pipe_weno3(p: Var,
                                 time_series=[0, 3 * 3600])
     artifact[leak_rate.name] = leak_rate
 
+    d_rate = TimeSeriesParam('d_rate' + '_' + pipe_name,
+                               v_series=[1, 1],
+                               time_series=[0, 3 * 3600])
+    artifact[d_rate.name] = d_rate
+
     C0 = 0.61
     T0 = 293
     Mass = 17.1e-3
@@ -465,7 +470,7 @@ def leakage_ngs_pipe_weno3(p: Var,
     R = 8.314
     Hcr = 1.3
     d_leak = d
-    Ah = np.pi * (d_leak / 2) ** 2
+    Ah = np.pi * ((d_rate * d_leak) / 2) ** 2
     Pa = 101e3
     P2cr = Pa * (2 / (Hcr + 1)) ** (-Hcr / (Hcr - 1))
 

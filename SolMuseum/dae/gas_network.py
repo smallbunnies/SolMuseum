@@ -30,6 +30,8 @@ class gas_network:
         m.Area = Param('Area', np.pi * (self.gf.D / 2) ** 2)
         m.lam_gas_pipe = Param('lam_gas_pipe', value=self.gf.lam)
         L = self.gf.L
+        compress_fac = self.gf.compress_fac
+
         dx = dx
         M = np.floor(L / dx).astype(int)
         for j in range(self.gf.n_pipe):
@@ -62,7 +64,7 @@ class gas_network:
                 if ptype == 1:
                     eqn_q = eqn_q + qi[0]
                     m.__dict__[f'pressure_inlet_pipe{idx}'] = Eqn(f'Pressure node {node} pipe {idx} inlet',
-                                                                  m.Pi[node] - pi[0])
+                                                                  m.Pi[node] * compress_fac[node] - pi[0])
 
             m.__dict__[f'mass_continuity_node{node}'] = Eqn('mass flow continuity of node {}'.format(node),
                                                             eqn_q)
