@@ -12,7 +12,8 @@ def heat_pipe(T: Var,
               dt,
               M,
               pipe_name: str,
-              method='kt2'):
+              method='kt2',
+              T_offset: int = 0):
     r"""
     This function model and discretize heat pipe equations
 
@@ -114,6 +115,10 @@ def heat_pipe(T: Var,
     if not is_number(dx):
         raise TypeError(f'dx is {type(dx)} instead of number')
 
+    if not is_integer(T_offset):
+        raise TypeError(f'T_offset is {type(T_offset)} instead of integer')
+    off = int(T_offset)
+
     artifact = dict()
 
     if method not in ['kt2'] and dt == 0:
@@ -128,19 +133,20 @@ def heat_pipe(T: Var,
                 )
 
             theta = Param('theta', 1)
-            rhs = kt1_ode(T[0:1], T[1:2], m, lam, rho, Cp, S, Tamb, dx)
+            rhs = kt1_ode(T[off+0:off+1], T[off+1:off+2], m, lam, rho, Cp, S, Tamb, dx)
             artifact['T' + pipe_name + '_eqn1'] = Ode(f'heat_pipe_kt2_T{pipe_name}_1',
                                                       rhs,
-                                                      T[1:2])
+                                                      T[off+1:off+2])
 
-            rhs = kt2_ode(T[0:M-2], T[1:M-1], T[2:M], T[3:M+1], m, lam, rho, Cp, S, Tamb, theta, dx)
+            rhs = kt2_ode(T[off+0:off+M-2], T[off+1:off+M-1], T[off+2:off+M], T[off+3:off+M+1],
+                          m, lam, rho, Cp, S, Tamb, theta, dx)
             artifact['T' + pipe_name + '_eqn2'] = Ode(f'heat_pipe_kt2_T{pipe_name}_2',
                                                       rhs,
-                                                      T[2:M])
-            rhs = kt1_ode(T[M-1:M], T[M:M+1], m, lam, rho, Cp, S, Tamb, dx)
+                                                      T[off+2:off+M])
+            rhs = kt1_ode(T[off+M-1:off+M], T[off+M:off+M+1], m, lam, rho, Cp, S, Tamb, dx)
             artifact['T' + pipe_name + '_eqn3'] = Ode(f'heat_pipe_kt2_T{pipe_name}_3',
                                                       rhs,
-                                                      T[M:M+1])
+                                                      T[off+M:off+M+1])
             artifact['theta'] = Param('theta', 1)
         case 'iu':
             if is_number(dt):
@@ -148,9 +154,9 @@ def heat_pipe(T: Var,
                     raise ValueError(f'dt must be positive, got {dt}')
             T0 = AliasVar(T.name, init=T)
             artifact[T0.name] = T0
-            dTdt = (T[1:M+1]-T0[1:M+1])/dt
-            dTdx = (T[1:M+1]-T[0:M])/dx
-            rhs = dTdt + m/S/rho * dTdx + lam/S/rho/Cp*(T[1:M+1]-Tamb)
+            dTdt = (T[off+1:off+M+1]-T0[off+1:off+M+1])/dt
+            dTdx = (T[off+1:off+M+1]-T[off+0:off+M])/dx
+            rhs = dTdt + m/S/rho * dTdx + lam/S/rho/Cp*(T[off+1:off+M+1]-Tamb)
             artifact[f'iu_pipe_{pipe_name}'] = Eqn(f'iu_pipe_{pipe_name}', rhs)
         case 'yao':
             if is_number(dt):
@@ -158,9 +164,9 @@ def heat_pipe(T: Var,
                     raise ValueError(f'dt must be positive, got {dt}')
             T0 = AliasVar(T.name, init=T)
             artifact[T0.name] = T0
-            dTdt = (T[1:M+1]-T0[1:M+1]+T[0:M]-T0[0:M])/(2*dt)
-            dTdx = (T[1:M+1]+T0[1:M+1]-T[0:M]-T0[0:M])/(2*dx)
-            Tavg = (T[1:M+1]+T0[1:M+1]+T[0:M]+T0[0:M])/4
+            dTdt = (T[off+1:off+M+1]-T0[off+1:off+M+1]+T[off+0:off+M]-T0[off+0:off+M])/(2*dt)
+            dTdx = (T[off+1:off+M+1]+T0[off+1:off+M+1]-T[off+0:off+M]-T0[off+0:off+M])/(2*dx)
+            Tavg = (T[off+1:off+M+1]+T0[off+1:off+M+1]+T[off+0:off+M]+T0[off+0:off+M])/4
             rhs = dTdt + m/S/rho*dTdx + lam/S/rho/Cp*(Tavg-Tamb)
             artifact[f'yao_pipe_{pipe_name}'] = Eqn(f'yao_pipe_{pipe_name}', rhs)
         case _:
