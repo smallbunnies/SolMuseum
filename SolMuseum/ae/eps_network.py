@@ -54,14 +54,16 @@ class eps_network:
             Qd = self.pf.Qd
 
             if loopeqn:
-                # LoopEqn path: flatten Vm/Va over every bus, emit
-                # P/Q balance as two ``LoopEqn``s over all ``nb``
-                # buses with direct-outer CSR walkers on Gbus/Bbus.
-                # Ref+pv Vm and ref Va are held at their known PF
-                # values via two additional pin ``LoopEqn``s — no
-                # per-index scalar Eqns.
-                m.Vm_full = Var('Vm_full', np.asarray(Vm).copy())
-                m.Va_full = Var('Va_full', np.asarray(Va).copy())
+                # LoopEqn path: ``Vm`` / ``Va`` are flat over every
+                # bus (length ``nb``) instead of the legacy ``Vm[pq]``
+                # / ``Va[pv+pq]`` subset Vars, but the exported names
+                # stay as ``m.Vm`` / ``m.Va`` so downstream IES code
+                # that references them by name keeps working. Ref+pv
+                # Vm and ref Va are held at their known PF values via
+                # two additional pin ``LoopEqn``s — no per-index
+                # scalar Eqns.
+                m.Vm = Var('Vm', np.asarray(Vm).copy())
+                m.Va = Var('Va', np.asarray(Va).copy())
                 m.Pg = Var('Pg', Pg)
                 m.Qg = Var('Qg', Qg)
                 m.Pd = Var('Pd', Pd)
@@ -72,14 +74,14 @@ class eps_network:
                 i = Idx('i', nb)
                 j = Idx('j', nb)
                 body_P = (
-                    m.Vm_full[i] * Sum(
-                        m.Vm_full[j] * m.Gbus[i, j]
-                        * cos(m.Va_full[i] - m.Va_full[j]),
+                    m.Vm[i] * Sum(
+                        m.Vm[j] * m.Gbus[i, j]
+                        * cos(m.Va[i] - m.Va[j]),
                         j,
                     )
-                    + m.Vm_full[i] * Sum(
-                        m.Vm_full[j] * m.Bbus[i, j]
-                        * sin(m.Va_full[i] - m.Va_full[j]),
+                    + m.Vm[i] * Sum(
+                        m.Vm[j] * m.Bbus[i, j]
+                        * sin(m.Va[i] - m.Va[j]),
                         j,
                     )
                     + m.Pd[i] - m.Pg[i]
@@ -88,14 +90,14 @@ class eps_network:
                                    body=body_P, model=m)
 
                 body_Q = (
-                    m.Vm_full[i] * Sum(
-                        m.Vm_full[j] * m.Gbus[i, j]
-                        * sin(m.Va_full[i] - m.Va_full[j]),
+                    m.Vm[i] * Sum(
+                        m.Vm[j] * m.Gbus[i, j]
+                        * sin(m.Va[i] - m.Va[j]),
                         j,
                     )
-                    - m.Vm_full[i] * Sum(
-                        m.Vm_full[j] * m.Bbus[i, j]
-                        * cos(m.Va_full[i] - m.Va_full[j]),
+                    - m.Vm[i] * Sum(
+                        m.Vm[j] * m.Bbus[i, j]
+                        * cos(m.Va[i] - m.Va[j]),
                         j,
                     )
                     + m.Qd[i] - m.Qg[i]
@@ -105,8 +107,8 @@ class eps_network:
 
                 # LoopEqn pins over (ref+pv, ref) subsets via
                 # indirect-outer indexing, so the generated module
-                # gets ONE inner_F per pin family instead of ``nref+npv``
-                # per-index scalar sub-functions.
+                # gets ONE inner_F per pin family instead of
+                # ``nref + npv`` per-index scalar sub-functions.
                 ref_pv_arr = np.array(ref + pv, dtype=int)
                 ref_arr = np.array(ref, dtype=int)
                 nref_pv = len(ref_pv_arr)
@@ -123,14 +125,12 @@ class eps_network:
                 i_vr = Idx('i_vr', nref)
                 m.Vm_pin = LoopEqn(
                     'Vm_pin', outer_index=i_vp,
-                    body=m.Vm_full[m.ref_pv_idx[i_vp]]
-                         - m.Vm_pinned[i_vp],
+                    body=m.Vm[m.ref_pv_idx[i_vp]] - m.Vm_pinned[i_vp],
                     model=m,
                 )
                 m.Va_pin = LoopEqn(
                     'Va_pin', outer_index=i_vr,
-                    body=m.Va_full[m.ref_idx[i_vr]]
-                         - m.Va_pinned[i_vr],
+                    body=m.Va[m.ref_idx[i_vr]] - m.Va_pinned[i_vr],
                     model=m,
                 )
             else:
