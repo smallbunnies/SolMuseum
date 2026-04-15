@@ -432,11 +432,16 @@ class heat_network:
             'Tr_mixing', outer_index=i_n, body=body_Tr, model=m,
         )
 
-        # --- temperature drop: heat_pipe with flat Tsp_all / Trp_all
-        #     and per-pipe T_offset sourced from the precomputed
-        #     ``offsets`` array. ``heat_pipe`` slices the relevant
-        #     segment internally so the kt2 (or iu / yao) stencil is
-        #     unchanged. ---
+        # --- temperature drop: PDE per pipe via classic ``heat_pipe``.
+        #     Flat ``Tsp_all`` / ``Trp_all`` + per-pipe ``T_offset``
+        #     so the kt2 / iu / yao stencils target the right
+        #     segment without changing ``heat_pipe`` itself.
+        #     (An experimental LoopOde-based wrapper
+        #     ``heat_pipe_loop`` lives alongside ``heat_pipe.py`` —
+        #     a session-closed prototype that symbolic-AD's too
+        #     slowly on the kt2 ``minmod`` body for the IES scale
+        #     to be production-viable; kept as a starting point
+        #     for a future sparsity-pre-built rewrite.)
         for j in range(n_pipe):
             off_j = int(offsets[j])
             m.add(heat_pipe(m.Tsp_all, m.m[j], m.lam_heat_pipe[j],
