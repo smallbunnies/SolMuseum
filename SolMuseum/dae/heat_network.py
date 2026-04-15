@@ -1,5 +1,7 @@
 import numpy as np
+from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model, TimeSeriesParam, Var, Abs, heaviside, exp, Sign
+from Solverz import Idx, LoopEqn, Sum
 from Solverz.utilities.type_checker import is_number
 from SolUtil import DhsFlow, DhsFaultFlow
 
@@ -19,7 +21,8 @@ class heat_network:
             dx,
             dt=0,
             method='kt2',
-            dynamic_slack=False):
+            dynamic_slack=False,
+            loopeqn=True):
         m = Model()
         Tamb = self.df.Ta
         Cp = 4182
@@ -61,25 +64,77 @@ class heat_network:
             m.__dict__['Tsp_' + str(j)] = Var('Tsp_' + str(j), value=Tsp0)
             m.__dict__['Trp_' + str(j)] = Var('Trp_' + str(j), value=Trp0)
 
-        # mass flow continuity
-        for node in range(self.df.n_node):
-            rhs = - m.min[node]
-            for edge in self.df.G.in_edges(node, data=True):
-                pipe = edge[2]['idx']
-                rhs = rhs + m.m[pipe]
-                idx = str(pipe)
-                Trpj = m.__dict__['Trp_' + idx]
-                m.__dict__[f'Return_pipe_inlet_temp_{pipe}'] = Eqn(f'Return_pipe_inlet_temp_{pipe}',
-                                                                   Trpj[0] - m.Tr[node])
+        n_node = self.df.n_node
+        n_pipe = self.df.n_pipe
+        if loopeqn:
+            # Emit the per-node mass-continuity as a single ``LoopEqn``
+            # walking the node-pipe net incidence matrix. Each pipe has
+            # exactly one in-node and one out-node so
+            # ``V_net.nnz == 2 * n_pipe``; the sparse walker visits
+            # only stored entries per row.
+            #
+            # The per-pipe inlet-temperature boundary equations stay
+            # as scalar ``Eqn``s because they reference per-pipe
+            # ``Tsp_{p}`` / ``Trp_{p}`` Vars that can't live inside a
+            # LoopEqn body until the flat-Var refactor lands (see
+            # ``SOLMUSEUM_FLATTEN_REFACTOR.md``).
+            V_net_arr = np.zeros((n_node, n_pipe))
+            for node in range(n_node):
+                for edge in self.df.G.in_edges(node, data=True):
+                    V_net_arr[node, edge[2]['idx']] = 1.0
+                for edge in self.df.G.out_edges(node, data=True):
+                    V_net_arr[node, edge[2]['idx']] = -1.0
+            m.V_net = Param('V_net', csc_array(V_net_arr),
+                             dim=2, sparse=True)
 
-            for edge in self.df.G.out_edges(node, data=True):
-                pipe = edge[2]['idx']
-                rhs = rhs - m.m[pipe]
-                idx = str(pipe)
-                Tspj = m.__dict__['Tsp_' + idx]
-                m.__dict__[f'Supply_pipe_inlet_temp_{pipe}'] = Eqn(f'Supply_pipe_inlet_temp_{pipe}',
-                                                                   Tspj[0] - m.Ts[node])
-            m.__dict__[f"Mass_flow_continuity_{node}"] = Eqn(f"Mass_flow_continuity_{node}", rhs)
+            i_n = Idx('i_n', n_node)
+            p_p = Idx('p_p', n_pipe)
+            body_mass = -m.min[i_n] + Sum(m.V_net[i_n, p_p] * m.m[p_p], p_p)
+            m.Mass_flow_continuity = LoopEqn(
+                'Mass_flow_continuity',
+                outer_index=i_n,
+                body=body_mass,
+                model=m,
+            )
+
+            for node in range(n_node):
+                for edge in self.df.G.in_edges(node, data=True):
+                    pipe = edge[2]['idx']
+                    idx = str(pipe)
+                    Trpj = m.__dict__['Trp_' + idx]
+                    m.__dict__[f'Return_pipe_inlet_temp_{pipe}'] = Eqn(
+                        f'Return_pipe_inlet_temp_{pipe}',
+                        Trpj[0] - m.Tr[node],
+                    )
+                for edge in self.df.G.out_edges(node, data=True):
+                    pipe = edge[2]['idx']
+                    idx = str(pipe)
+                    Tspj = m.__dict__['Tsp_' + idx]
+                    m.__dict__[f'Supply_pipe_inlet_temp_{pipe}'] = Eqn(
+                        f'Supply_pipe_inlet_temp_{pipe}',
+                        Tspj[0] - m.Ts[node],
+                    )
+        else:
+            # Legacy path — per-node scalar mass continuity Eqns, BC
+            # Eqns emitted inside the same loop.
+            for node in range(n_node):
+                rhs = - m.min[node]
+                for edge in self.df.G.in_edges(node, data=True):
+                    pipe = edge[2]['idx']
+                    rhs = rhs + m.m[pipe]
+                    idx = str(pipe)
+                    Trpj = m.__dict__['Trp_' + idx]
+                    m.__dict__[f'Return_pipe_inlet_temp_{pipe}'] = Eqn(f'Return_pipe_inlet_temp_{pipe}',
+                                                                       Trpj[0] - m.Tr[node])
+
+                for edge in self.df.G.out_edges(node, data=True):
+                    pipe = edge[2]['idx']
+                    rhs = rhs - m.m[pipe]
+                    idx = str(pipe)
+                    Tspj = m.__dict__['Tsp_' + idx]
+                    m.__dict__[f'Supply_pipe_inlet_temp_{pipe}'] = Eqn(f'Supply_pipe_inlet_temp_{pipe}',
+                                                                       Tspj[0] - m.Ts[node])
+                m.__dict__[f"Mass_flow_continuity_{node}"] = Eqn(f"Mass_flow_continuity_{node}", rhs)
 
         # loop pressure
         rhs = 0
