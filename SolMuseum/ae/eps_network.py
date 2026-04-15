@@ -28,9 +28,9 @@ class eps_network:
             If True, emit the per-bus injection equations as
             ``LoopEqn`` scalar templates (one ``inner_F`` / ``inner_J``
             per equation family instead of ``O(n_bus)`` scalar
-            sub-functions). Currently honored only when ``dyn=True``;
-            the ``dyn=False`` branch always uses the legacy scalar
-            expansion.
+            sub-functions). Honored for both ``dyn=True`` and
+            ``dyn=False``; pass ``loopeqn=False`` to fall back to
+            the legacy per-bus scalar expansion.
         """
         U: np.ndarray = self.pf.Vm * np.exp(1j * self.pf.Va)
         S: np.ndarray = (self.pf.Pg - self.pf.Pd) + 1j * (self.pf.Qg - self.pf.Qd)
@@ -53,44 +53,125 @@ class eps_network:
             Pd = self.pf.Pd
             Qd = self.pf.Qd
 
-            m.Va = Var('Va', Va[pv + pq])
-            m.Vm = Var('Vm', Vm[pq])
-            m.Pg = Var('Pg', Pg)
-            m.Qg = Var('Qg', Qg)
-            m.Pd = Var('Pd', Pd)
-            m.Qd = Var('Qd', Qd)
+            if loopeqn:
+                # LoopEqn path: flatten Vm/Va over every bus, emit
+                # P/Q balance as two ``LoopEqn``s over all ``nb``
+                # buses with direct-outer CSR walkers on Gbus/Bbus.
+                # Ref+pv Vm and ref Va are held at their known PF
+                # values via two additional pin ``LoopEqn``s — no
+                # per-index scalar Eqns.
+                m.Vm_full = Var('Vm_full', np.asarray(Vm).copy())
+                m.Va_full = Var('Va_full', np.asarray(Va).copy())
+                m.Pg = Var('Pg', Pg)
+                m.Qg = Var('Qg', Qg)
+                m.Pd = Var('Pd', Pd)
+                m.Qd = Var('Qd', Qd)
+                m.Gbus = Param('Gbus', csc_array(G), dim=2, sparse=True)
+                m.Bbus = Param('Bbus', csc_array(B), dim=2, sparse=True)
 
-            def get_Vm(idx):
-                if idx in ref + pv:
-                    return Vm[idx]
-                elif idx in pq:
-                    return m.Vm[pq.index(idx)]
+                i = Idx('i', nb)
+                j = Idx('j', nb)
+                body_P = (
+                    m.Vm_full[i] * Sum(
+                        m.Vm_full[j] * m.Gbus[i, j]
+                        * cos(m.Va_full[i] - m.Va_full[j]),
+                        j,
+                    )
+                    + m.Vm_full[i] * Sum(
+                        m.Vm_full[j] * m.Bbus[i, j]
+                        * sin(m.Va_full[i] - m.Va_full[j]),
+                        j,
+                    )
+                    + m.Pd[i] - m.Pg[i]
+                )
+                m.P_eqn = LoopEqn('P_eqn', outer_index=i,
+                                   body=body_P, model=m)
 
-            def get_Va(idx):
-                if idx in ref:
-                    return Va[idx]
-                elif idx in pv + pq:
-                    return m.Va[(pv + pq).index(idx)]
+                body_Q = (
+                    m.Vm_full[i] * Sum(
+                        m.Vm_full[j] * m.Gbus[i, j]
+                        * sin(m.Va_full[i] - m.Va_full[j]),
+                        j,
+                    )
+                    - m.Vm_full[i] * Sum(
+                        m.Vm_full[j] * m.Bbus[i, j]
+                        * cos(m.Va_full[i] - m.Va_full[j]),
+                        j,
+                    )
+                    + m.Qd[i] - m.Qg[i]
+                )
+                m.Q_eqn = LoopEqn('Q_eqn', outer_index=i,
+                                   body=body_Q, model=m)
 
-            for i in pv + pq + ref:
-                expr = 0
-                Vmi = get_Vm(i)
-                Vai = get_Va(i)
-                for j in range(nb):
-                    Vmj = get_Vm(j)
-                    Vaj = get_Va(j)
-                    expr += Vmi * Vmj * (G[i, j] * cos(Vai - Vaj) + B[i, j] * sin(Vai - Vaj))
-                m.__dict__[f'P_eqn_{i}'] = Eqn(f'P_eqn_{i}', expr + m.Pd[i] - m.Pg[i])
+                # LoopEqn pins over (ref+pv, ref) subsets via
+                # indirect-outer indexing, so the generated module
+                # gets ONE inner_F per pin family instead of ``nref+npv``
+                # per-index scalar sub-functions.
+                ref_pv_arr = np.array(ref + pv, dtype=int)
+                ref_arr = np.array(ref, dtype=int)
+                nref_pv = len(ref_pv_arr)
+                nref = len(ref_arr)
 
-            for i in pv + pq + ref:
-                expr = 0
-                Vmi = get_Vm(i)
-                Vai = get_Va(i)
-                for j in range(nb):
-                    Vmj = get_Vm(j)
-                    Vaj = get_Va(j)
-                    expr += Vmi * Vmj * (G[i, j] * sin(Vai - Vaj) - B[i, j] * cos(Vai - Vaj))
-                m.__dict__[f'Q_eqn_{i}'] = Eqn(f'Q_eqn_{i}', expr + m.Qd[i] - m.Qg[i])
+                m.ref_pv_idx = Param('ref_pv_idx', ref_pv_arr, dtype=int)
+                m.Vm_pinned = Param('Vm_pinned',
+                                     np.asarray(Vm)[ref_pv_arr])
+                m.ref_idx = Param('ref_idx', ref_arr, dtype=int)
+                m.Va_pinned = Param('Va_pinned',
+                                     np.asarray(Va)[ref_arr])
+
+                i_vp = Idx('i_vp', nref_pv)
+                i_vr = Idx('i_vr', nref)
+                m.Vm_pin = LoopEqn(
+                    'Vm_pin', outer_index=i_vp,
+                    body=m.Vm_full[m.ref_pv_idx[i_vp]]
+                         - m.Vm_pinned[i_vp],
+                    model=m,
+                )
+                m.Va_pin = LoopEqn(
+                    'Va_pin', outer_index=i_vr,
+                    body=m.Va_full[m.ref_idx[i_vr]]
+                         - m.Va_pinned[i_vr],
+                    model=m,
+                )
+            else:
+                m.Va = Var('Va', Va[pv + pq])
+                m.Vm = Var('Vm', Vm[pq])
+                m.Pg = Var('Pg', Pg)
+                m.Qg = Var('Qg', Qg)
+                m.Pd = Var('Pd', Pd)
+                m.Qd = Var('Qd', Qd)
+
+                def get_Vm(idx):
+                    if idx in ref + pv:
+                        return Vm[idx]
+                    elif idx in pq:
+                        return m.Vm[pq.index(idx)]
+
+                def get_Va(idx):
+                    if idx in ref:
+                        return Va[idx]
+                    elif idx in pv + pq:
+                        return m.Va[(pv + pq).index(idx)]
+
+                for i in pv + pq + ref:
+                    expr = 0
+                    Vmi = get_Vm(i)
+                    Vai = get_Va(i)
+                    for j in range(nb):
+                        Vmj = get_Vm(j)
+                        Vaj = get_Va(j)
+                        expr += Vmi * Vmj * (G[i, j] * cos(Vai - Vaj) + B[i, j] * sin(Vai - Vaj))
+                    m.__dict__[f'P_eqn_{i}'] = Eqn(f'P_eqn_{i}', expr + m.Pd[i] - m.Pg[i])
+
+                for i in pv + pq + ref:
+                    expr = 0
+                    Vmi = get_Vm(i)
+                    Vai = get_Va(i)
+                    for j in range(nb):
+                        Vmj = get_Vm(j)
+                        Vaj = get_Va(j)
+                        expr += Vmi * Vmj * (G[i, j] * sin(Vai - Vaj) - B[i, j] * cos(Vai - Vaj))
+                    m.__dict__[f'Q_eqn_{i}'] = Eqn(f'Q_eqn_{i}', expr + m.Qd[i] - m.Qg[i])
 
         else:
             m.ix = Var('ix', I.real)
