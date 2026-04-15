@@ -1,6 +1,8 @@
 import numpy as np
+from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model
 from Solverz import Var, Abs, cos, sin
+from Solverz import Idx, LoopEqn, Sum
 from Solverz.utilities.type_checker import is_number
 from SolUtil import PowerFlow
 from warnings import warn
@@ -13,7 +15,23 @@ class eps_network:
         self.pf = pf
         self.pf.run()
 
-    def mdl(self, dyn=False, **kwargs):
+    def mdl(self, dyn=False, loopeqn=True, **kwargs):
+        """Build the EPS network model.
+
+        Parameters
+        ----------
+        dyn : bool, default False
+            If True, use the rectangular current-balance formulation
+            (for transient/DAE use). Otherwise build the polar P/Q
+            balance for steady-state power flow.
+        loopeqn : bool, default True
+            If True, emit the per-bus injection equations as
+            ``LoopEqn`` scalar templates (one ``inner_F`` / ``inner_J``
+            per equation family instead of ``O(n_bus)`` scalar
+            sub-functions). Currently honored only when ``dyn=True``;
+            the ``dyn=False`` branch always uses the legacy scalar
+            expansion.
+        """
         U: np.ndarray = self.pf.Vm * np.exp(1j * self.pf.Va)
         S: np.ndarray = (self.pf.Pg - self.pf.Pd) + 1j * (self.pf.Qg - self.pf.Qd)
         I = (S / U).conjugate()
@@ -84,16 +102,38 @@ class eps_network:
             m.Qd = Param('Qd', self.pf.Qd)
             m.Qg = Param('Qg', self.pf.Qg)
 
-            # network mdl
-            for i in range(self.pf.nb):
-                rhs1 = m.ix[i]
-                rhs2 = m.iy[i]
+            nb = self.pf.nb
 
-                for j in range(self.pf.nb):
-                    rhs1 = rhs1 - self.pf.Gbus[i, j] * m.ux[j] + self.pf.Bbus[i, j] * m.uy[j]
-                    rhs2 = rhs2 - self.pf.Gbus[i, j] * m.uy[j] - self.pf.Bbus[i, j] * m.ux[j]
+            if loopeqn:
+                m.Gbus = Param('Gbus', csc_array(self.pf.Gbus), dim=2, sparse=True)
+                m.Bbus = Param('Bbus', csc_array(self.pf.Bbus), dim=2, sparse=True)
 
-                m.__dict__[f'ix_inj_{i}'] = Eqn(f'ix injection {i}', rhs1)
-                m.__dict__[f'iy_inj_{i}'] = Eqn(f'iy injection {i}', rhs2)
+                i = Idx('i', nb)
+                j = Idx('j', nb)
+                body_ix = (
+                    m.ix[i]
+                    - Sum(m.Gbus[i, j] * m.ux[j], j)
+                    + Sum(m.Bbus[i, j] * m.uy[j], j)
+                )
+                body_iy = (
+                    m.iy[i]
+                    - Sum(m.Gbus[i, j] * m.uy[j], j)
+                    - Sum(m.Bbus[i, j] * m.ux[j], j)
+                )
+                m.ix_inj = LoopEqn('ix_inj', outer_index=i,
+                                   body=body_ix, model=m)
+                m.iy_inj = LoopEqn('iy_inj', outer_index=i,
+                                   body=body_iy, model=m)
+            else:
+                for i in range(nb):
+                    rhs1 = m.ix[i]
+                    rhs2 = m.iy[i]
+
+                    for j in range(nb):
+                        rhs1 = rhs1 - self.pf.Gbus[i, j] * m.ux[j] + self.pf.Bbus[i, j] * m.uy[j]
+                        rhs2 = rhs2 - self.pf.Gbus[i, j] * m.uy[j] - self.pf.Bbus[i, j] * m.ux[j]
+
+                    m.__dict__[f'ix_inj_{i}'] = Eqn(f'ix injection {i}', rhs1)
+                    m.__dict__[f'iy_inj_{i}'] = Eqn(f'iy injection {i}', rhs2)
 
         return m
