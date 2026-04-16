@@ -1194,7 +1194,7 @@ class fault_heat_network:
         m.Return_pipe_inlet_temp = LoopEqn(
             'Return_pipe_inlet_temp', outer_index=p_p,
             body=(m.Trp_all[m.fht_pipe_inlet[p_p]]
-                  - m.Tr[m.fht_ptn_r[p_p]]),
+                  - m.Tr[m.fht_ptn_s[p_p]]),
             model=m)
 
         # --- heat pipe PDE (cross-pipe LoopOde) ---
@@ -1227,30 +1227,45 @@ class fault_heat_network:
             "Mass_flow_continuity_sup_leak",
             m.ms[dff.fault_pipe] - (m.ms[df.n_pipe] + m.m_leak[0]))
 
-        # --- mass continuity return (regular nodes) ---
+        # --- mass continuity return (non-slack regular nodes) ---
+        # fs_injection is a scalar Var that LoopEqn cannot
+        # differentiate w.r.t. (bare symbol, not IndexedBase).
+        # Handle the slack node as a separate scalar Eqn.
         mass_ret_sign = np.zeros(n_node)
-        is_slack_reg = np.zeros(n_node)
         for node in range(n_node):
-            if node in df.slack_node:
-                mass_ret_sign[node] = -1.0
-                is_slack_reg[node] = 1.0
-            elif node in df.s_node:
+            if node in df.slack_node or node in df.s_node:
                 mass_ret_sign[node] = -1.0
             else:
                 mass_ret_sign[node] = 1.0
         m.fht_mrs = Param('fht_mrs', mass_ret_sign)
-        m.fht_isr = Param('fht_isr', is_slack_reg)
+        non_slack_reg = np.array(
+            [i for i in range(n_node) if i not in df.slack_node],
+            dtype=np.int64)
+        m.fht_nsr = Param('fht_nsr', non_slack_reg, dtype=int)
+        i_nsr = Idx('i_nsr', len(non_slack_reg))
+        nsr_idx = m.fht_nsr[i_nsr]
         body_mass_ret = (
-            m.fht_mrs[i_reg] * m.min[i_reg]
-            + m.fht_isr[i_reg] * m.fs_injection
-            + Sum(m.fht_V_in_r[i_reg, p_p]
+            m.fht_mrs[nsr_idx] * m.min[nsr_idx]
+            + Sum(m.fht_V_in_r[nsr_idx, p_p]
                   * m.mr[m.fht_orig[p_p]], p_p)
-            - Sum(m.fht_V_out_r[i_reg, p_p]
+            - Sum(m.fht_V_out_r[nsr_idx, p_p]
                   * m.mr[m.fht_orig[p_p]], p_p)
         )
         m.Mass_flow_continuity_ret = LoopEqn(
-            'Mass_flow_continuity_ret', outer_index=i_reg,
+            'Mass_flow_continuity_ret', outer_index=i_nsr,
             body=body_mass_ret, model=m)
+        # Slack node return mass continuity (scalar — includes
+        # fs_injection which LoopEqn can't differentiate w.r.t.)
+        slack = int(df.slack_node[0])
+        rhs_slack_ret = -(m.min[slack] - m.fs_injection)
+        for edge in dff.HydraRet.G.in_edges(slack, data=True):
+            j = edge[2]['idx']
+            rhs_slack_ret = rhs_slack_ret + m.mr[j]
+        for edge in dff.HydraRet.G.out_edges(slack, data=True):
+            j = edge[2]['idx']
+            rhs_slack_ret = rhs_slack_ret - m.mr[j]
+        m.Mass_flow_continuity_ret_slack = Eqn(
+            "Mass_flow_continuity_ret_slack", rhs_slack_ret)
         m.Mass_flow_continuity_ret_leak = Eqn(
             "Mass_flow_continuity_ret_leak",
             m.mr[df.n_pipe] - (m.mr[dff.fault_pipe] + m.m_leak[1]))
