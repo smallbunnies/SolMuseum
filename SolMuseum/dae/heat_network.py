@@ -598,7 +598,13 @@ class fault_heat_network:
             dx=None,
             dt=0,
             method='kt2',
-            leakage_diameter=None):
+            leakage_diameter=None,
+            loopeqn=True):
+        if loopeqn:
+            return self._mdl_loopeqn(dx, dt, method, leakage_diameter)
+        return self._mdl_legacy(dx, dt, method, leakage_diameter)
+
+    def _mdl_legacy(self, dx, dt, method, leakage_diameter):
         dff = self.dff
 
         m = Model()
@@ -866,5 +872,373 @@ class fault_heat_network:
                 rhs = m.min[node]
 
             m.__dict__[f'phi_{node}'] = Eqn(f"phi_{node}", rhs)
+
+        return m
+
+    def _mdl_loopeqn(self, dx, dt, method, leakage_diameter):
+        """Build fault heat-network model using LoopEqn / LoopOde.
+
+        Same physics as ``_mdl_legacy`` but scalar per-node/per-pipe
+        loops are replaced by LoopEqn. The leak node and slack node
+        are handled as scalar Eqns (LoopEqn can't differentiate
+        w.r.t. scalar Vars like Ts_slack / m_leak).
+
+        Flat layout
+        -----------
+        Tsp_all / Trp_all pack all real pipes (excluding the env-
+        leak pipe) with state cells at the front and BC inlet cells
+        at the tail, matching the normal heat_network layout.
+
+        Incidence matrices are separate for supply (HydraSup.G) and
+        return (HydraRet.G) graphs, prefixed ``fht_`` to avoid name
+        collision with the normal heat_network.
+        """
+        dff = self.dff
+        df = dff.df
+        Tamb = df.Ta
+        Cp = 4182
+        n_node = df.n_node
+        leak_node = n_node
+
+        m = Model()
+        m.ms = Var('ms', dff.ms)
+        m.mr = Var('mr', dff.mr)
+        m.K = Param('K', dff.HydraSup.c)
+        m.m_leak = Var('m_leak', dff.yf0['m_leak'])
+        if leakage_diameter is None:
+            m.S_leak = Param('S_leak', df.S[dff.fault_pipe])
+        else:
+            m.S_leak = Param('S_leak', np.pi * leakage_diameter ** 2 / 4)
+        m.g = Param('g', 10)
+        m.Hs = Var('Hs', dff.Hs)
+        m.Hr = Var('Hr', dff.Hr)
+        m.Hset_s = Param('Hset_s', dff.HydraSup.Hset[0])
+        m.Hset_r = Param('Hset_r', dff.HydraSup.Hset[0] - dff.dH)
+        m.fs_injection = Var('fs_injection',
+                              dff.HydraSup.f[-1] + dff.HydraRet.f[-1])
+        m.phi = Var('phi', df.phi)
+        m.Ts = Var('Ts', dff.Ts)
+        m.Tr = Var('Tr', dff.Tr)
+        m.min = Var('min', dff.minset[:-1])
+        m.Ts_slack = Var('Ts_slack', df.Ts[df.slack_node])
+        m.Cp = Param('Cp', Cp)
+        m.rho = Param('rho', 958.4)
+        m.Tamb = Param('Tamb', Tamb)
+        m.Tsource = Param('Tsource', dff.mdl_full.p['Tsource'] + Tamb)
+        m.Tload = Param('Tload', dff.mdl_full.p['Tload'] + Tamb)
+        m.fht_lam = Param('fht_lam', dff.mdl_full.p['lam'])
+        m.fht_S = Param('fht_S',
+                          np.append(df.S, [df.S[dff.fault_pipe]]))
+        m.Ls = Param('Ls', dff.mdl_full.p['Ls'])
+        m.Lr = Param('Lr', dff.mdl_full.p['Lr'])
+
+        lam_vals = m.fht_lam.v
+        L = dff.mdl_full.p['Ls']
+        M = np.floor(L / dx).astype(int)
+
+        # Identify real pipes (exclude env-leak pipe)
+        real_pipes = []
+        pipe_from_sup = {}
+        pipe_to_sup = {}
+        for edge in dff.HydraSup.G.edges(data=True):
+            j = edge[2]['idx']
+            if j != df.n_pipe + 1:
+                real_pipes.append(j)
+                pipe_from_sup[j] = edge[0]
+                pipe_to_sup[j] = edge[1]
+        real_pipes = sorted(set(real_pipes))
+        n_real = len(real_pipes)
+        pipe_order = {j: idx for idx, j in enumerate(real_pipes)}
+
+        # --- flat Tsp_all / Trp_all: state first, BC at end ---
+        state_offsets = np.zeros(n_real + 1, dtype=int)
+        for idx, j in enumerate(real_pipes):
+            state_offsets[idx + 1] = state_offsets[idx] + int(M[j])
+        total_state = int(state_offsets[-1])
+        total_len = total_state + n_real
+
+        Tsp0_all = np.empty(total_len)
+        Trp0_all = np.empty(total_len)
+        for idx, j in enumerate(real_pipes):
+            Mj = int(M[j])
+            soff = int(state_offsets[idx])
+            att = np.exp(-lam_vals[j] * L[j] / (Cp * np.abs(dff.ms[j])))
+            Ts_s = dff.Ts[pipe_from_sup[j]] - Tamb
+            ps = np.linspace(Ts_s + Tamb, Ts_s * att + Tamb, Mj + 1)
+            Tsp0_all[soff:soff + Mj] = ps[1:]
+            Tsp0_all[total_state + idx] = ps[0]
+            Tr_s = dff.Tr[pipe_to_sup[j]] - Tamb
+            pr = np.linspace(Tr_s + Tamb, Tr_s * att + Tamb, Mj + 1)
+            Trp0_all[soff:soff + Mj] = pr[1:]
+            Trp0_all[total_state + idx] = pr[0]
+        m.Tsp_all = Var('Tsp_all', Tsp0_all)
+        m.Trp_all = Var('Trp_all', Trp0_all)
+
+        # --- pipe index Params ---
+        pipe_inlet_pos = (total_state + np.arange(n_real)).astype(np.int64)
+        pipe_outlet_pos = (state_offsets[:-1]
+                           + np.array([M[j] for j in real_pipes])
+                           - 1).astype(np.int64)
+        m.fht_pipe_inlet = Param('fht_pipe_inlet', pipe_inlet_pos, dtype=int)
+        m.fht_pipe_outlet = Param('fht_pipe_outlet', pipe_outlet_pos, dtype=int)
+        pfn_s = np.array([pipe_from_sup[j] for j in real_pipes], dtype=np.int64)
+        ptn_s = np.array([pipe_to_sup[j] for j in real_pipes], dtype=np.int64)
+        m.fht_pfn_s = Param('fht_pfn_s', pfn_s, dtype=int)
+        m.fht_ptn_s = Param('fht_ptn_s', ptn_s, dtype=int)
+        orig_idx = np.array(real_pipes, dtype=np.int64)
+        m.fht_orig = Param('fht_orig', orig_idx, dtype=int)
+
+        # Return-side pipe endpoints
+        pipe_to_ret = {}
+        for edge in dff.HydraRet.G.edges(data=True):
+            j = edge[2]['idx']
+            if j != df.n_pipe + 1:
+                pipe_to_ret[j] = edge[1]
+        ptn_r = np.array([pipe_to_ret.get(j, ptn_s[pipe_order[j]])
+                           for j in real_pipes], dtype=np.int64)
+        m.fht_ptn_r = Param('fht_ptn_r', ptn_r, dtype=int)
+
+        # --- supply/return incidence matrices ---
+        n_total = n_node + 1
+        V_in_s = np.zeros((n_total, n_real))
+        V_out_s = np.zeros((n_total, n_real))
+        for node in range(n_total):
+            for edge in dff.HydraSup.G.in_edges(node, data=True):
+                j = edge[2]['idx']
+                if j in pipe_order:
+                    V_in_s[node, pipe_order[j]] = 1.0
+            for edge in dff.HydraSup.G.out_edges(node, data=True):
+                j = edge[2]['idx']
+                if j in pipe_order:
+                    V_out_s[node, pipe_order[j]] = 1.0
+        m.fht_V_in_s = Param('fht_V_in_s', csc_array(V_in_s), dim=2, sparse=True)
+        m.fht_V_out_s = Param('fht_V_out_s', csc_array(V_out_s), dim=2, sparse=True)
+
+        V_in_r = np.zeros((n_total, n_real))
+        V_out_r = np.zeros((n_total, n_real))
+        for node in range(n_total):
+            for edge in dff.HydraRet.G.in_edges(node, data=True):
+                j = edge[2]['idx']
+                if j in pipe_order:
+                    V_in_r[node, pipe_order[j]] = 1.0
+            for edge in dff.HydraRet.G.out_edges(node, data=True):
+                j = edge[2]['idx']
+                if j in pipe_order:
+                    V_out_r[node, pipe_order[j]] = 1.0
+        m.fht_V_in_r = Param('fht_V_in_r', csc_array(V_in_r), dim=2, sparse=True)
+        m.fht_V_out_r = Param('fht_V_out_r', csc_array(V_out_r), dim=2, sparse=True)
+
+        # --- LoopEqn indices ---
+        i_n = Idx('i_n', n_total)
+        p_p = Idx('p_p', n_real)
+        i_reg = Idx('i_reg', n_node)
+
+        # Non-slack for Ts_mixing + phi_balance
+        slack = int(df.slack_node[0])
+        non_slack = np.array([i for i in range(n_total) if i != slack],
+                              dtype=np.int64)
+        m.fht_ns = Param('fht_ns', non_slack, dtype=int)
+        i_ns = Idx('i_ns', len(non_slack))
+        ns_idx = m.fht_ns[i_ns]
+
+        # --- supply temperature mixing (non-slack LoopEqn) ---
+        def _mask_v(idx_set, size):
+            a = np.zeros(size)
+            for i in idx_set:
+                a[int(i)] = 1.0
+            return a
+
+        is_source = _mask_v(list(df.s_node) + list(df.slack_node), n_total)
+        m.fht_is_source = Param('fht_is_source', is_source)
+        is_load = _mask_v(list(df.l_node), n_total)
+        m.fht_is_load = Param('fht_is_load', is_load)
+        is_inter = _mask_v(list(df.I_node), n_total)
+        m.fht_is_inter = Param('fht_is_inter', is_inter)
+
+        body_Ts_lhs = (
+            m.fht_is_source[ns_idx] * Abs(m.min[ns_idx])
+            + Sum(m.fht_V_in_s[ns_idx, p_p]
+                  * heaviside(m.ms[m.fht_orig[p_p]])
+                  * Abs(m.ms[m.fht_orig[p_p]]), p_p)
+            + Sum(m.fht_V_out_s[ns_idx, p_p]
+                  * (1 - heaviside(m.ms[m.fht_orig[p_p]]))
+                  * Abs(m.ms[m.fht_orig[p_p]]), p_p)
+        )
+        body_Ts_rhs = (
+            m.fht_is_source[ns_idx] * m.Tsource[ns_idx]
+            * Abs(m.min[ns_idx])
+            + Sum(m.fht_V_in_s[ns_idx, p_p]
+                  * heaviside(m.ms[m.fht_orig[p_p]])
+                  * Abs(m.ms[m.fht_orig[p_p]])
+                  * m.Tsp_all[m.fht_pipe_outlet[p_p]], p_p)
+            + Sum(m.fht_V_out_s[ns_idx, p_p]
+                  * (1 - heaviside(m.ms[m.fht_orig[p_p]]))
+                  * Abs(m.ms[m.fht_orig[p_p]])
+                  * m.Tsp_all[m.fht_pipe_inlet[p_p]], p_p)
+        )
+        m.Ts_mixing = LoopEqn(
+            'Ts_mixing', outer_index=i_ns,
+            body=m.Ts[ns_idx] * body_Ts_lhs - body_Ts_rhs, model=m)
+
+        # Slack Ts_mixing (scalar)
+        lhs_sk = Abs(m.min[slack])
+        rhs_sk = m.Ts_slack * Abs(m.min[slack])
+        for edge in dff.HydraSup.G.in_edges(slack, data=True):
+            j = edge[2]['idx']
+            if j in pipe_order:
+                oi = int(pipe_outlet_pos[pipe_order[j]])
+                lhs_sk += heaviside(m.ms[j]) * Abs(m.ms[j])
+                rhs_sk += heaviside(m.ms[j]) * m.Tsp_all[oi] * Abs(m.ms[j])
+        for edge in dff.HydraSup.G.out_edges(slack, data=True):
+            j = edge[2]['idx']
+            if j in pipe_order:
+                ii = int(pipe_inlet_pos[pipe_order[j]])
+                lhs_sk += (1 - heaviside(m.ms[j])) * Abs(m.ms[j])
+                rhs_sk += ((1 - heaviside(m.ms[j]))
+                           * m.Tsp_all[ii] * Abs(m.ms[j]))
+        m.Ts_mixing_slack = Eqn("Ts_mixing_slack",
+                                  m.Ts[slack] * lhs_sk - rhs_sk)
+
+        # --- return temperature mixing LoopEqn (all nodes) ---
+        body_Tr = (
+            m.Tr[i_n] * (
+                m.fht_is_load[i_n] * Abs(m.min[i_n])
+                + Sum(m.fht_V_in_r[i_n, p_p]
+                      * heaviside(m.mr[m.fht_orig[p_p]])
+                      * Abs(m.mr[m.fht_orig[p_p]]), p_p)
+                + Sum(m.fht_V_out_r[i_n, p_p]
+                      * (1 - heaviside(m.mr[m.fht_orig[p_p]]))
+                      * Abs(m.mr[m.fht_orig[p_p]]), p_p))
+            - m.fht_is_load[i_n] * m.Tload[i_n] * Abs(m.min[i_n])
+            - Sum(m.fht_V_in_r[i_n, p_p]
+                  * heaviside(m.mr[m.fht_orig[p_p]])
+                  * Abs(m.mr[m.fht_orig[p_p]])
+                  * m.Trp_all[m.fht_pipe_outlet[p_p]], p_p)
+            - Sum(m.fht_V_out_r[i_n, p_p]
+                  * (1 - heaviside(m.mr[m.fht_orig[p_p]]))
+                  * Abs(m.mr[m.fht_orig[p_p]])
+                  * m.Trp_all[m.fht_pipe_inlet[p_p]], p_p)
+        )
+        m.Tr_mixing = LoopEqn(
+            'Tr_mixing', outer_index=i_n, body=body_Tr, model=m)
+
+        # --- pipe inlet temp BC ---
+        m.Supply_pipe_inlet_temp = LoopEqn(
+            'Supply_pipe_inlet_temp', outer_index=p_p,
+            body=(m.Tsp_all[m.fht_pipe_inlet[p_p]]
+                  - m.Ts[m.fht_pfn_s[p_p]]),
+            model=m)
+        m.Return_pipe_inlet_temp = LoopEqn(
+            'Return_pipe_inlet_temp', outer_index=p_p,
+            body=(m.Trp_all[m.fht_pipe_inlet[p_p]]
+                  - m.Tr[m.fht_ptn_r[p_p]]),
+            model=m)
+
+        # --- heat pipe PDE (cross-pipe LoopOde) ---
+        # ms/mr are indexed by original pipe idx, need lam/S too
+        m.lam_heat_pipe = Param('lam_heat_pipe',
+                                 np.array([lam_vals[j] for j in real_pipes]))
+        m.S = Param('S', np.array([df.S[j] for j in real_pipes]))
+        M_real = np.array([M[j] for j in real_pipes])
+        _add_heat_pipe_loopode(m, M_real, n_real, state_offsets,
+                                total_state, dx)
+
+        # --- mass continuity supply (regular nodes) ---
+        is_gen_reg = _mask_v(
+            list(df.s_node) + list(df.slack_node), n_node)
+        m.fht_is_gen_reg = Param('fht_is_gen_reg', is_gen_reg)
+        body_mass_sup = (
+            (2 * m.fht_is_gen_reg[i_reg] - 1) * Abs(m.min[i_reg])
+            + Sum(m.fht_V_in_s[i_reg, p_p]
+                  * m.ms[m.fht_orig[p_p]], p_p)
+            - Sum(m.fht_V_out_s[i_reg, p_p]
+                  * m.ms[m.fht_orig[p_p]], p_p)
+        )
+        m.Mass_flow_continuity_sup = LoopEqn(
+            'Mass_flow_continuity_sup', outer_index=i_reg,
+            body=body_mass_sup, model=m)
+        m.Mass_flow_continuity_sup_leak = Eqn(
+            "Mass_flow_continuity_sup_leak",
+            m.ms[dff.fault_pipe] - (m.ms[df.n_pipe] + m.m_leak[0]))
+
+        # --- mass continuity return (regular nodes) ---
+        mass_ret_sign = np.zeros(n_node)
+        is_slack_reg = np.zeros(n_node)
+        for node in range(n_node):
+            if node in df.slack_node:
+                mass_ret_sign[node] = -1.0
+                is_slack_reg[node] = 1.0
+            elif node in df.s_node:
+                mass_ret_sign[node] = -1.0
+            else:
+                mass_ret_sign[node] = 1.0
+        m.fht_mrs = Param('fht_mrs', mass_ret_sign)
+        m.fht_isr = Param('fht_isr', is_slack_reg)
+        body_mass_ret = (
+            m.fht_mrs[i_reg] * m.min[i_reg]
+            + m.fht_isr[i_reg] * m.fs_injection
+            + Sum(m.fht_V_in_r[i_reg, p_p]
+                  * m.mr[m.fht_orig[p_p]], p_p)
+            - Sum(m.fht_V_out_r[i_reg, p_p]
+                  * m.mr[m.fht_orig[p_p]], p_p)
+        )
+        m.Mass_flow_continuity_ret = LoopEqn(
+            'Mass_flow_continuity_ret', outer_index=i_reg,
+            body=body_mass_ret, model=m)
+        m.Mass_flow_continuity_ret_leak = Eqn(
+            "Mass_flow_continuity_ret_leak",
+            m.mr[df.n_pipe] - (m.mr[dff.fault_pipe] + m.m_leak[1]))
+
+        # --- pressure drop LoopEqn ---
+        m.fht_Hs_drop = LoopEqn(
+            'fht_Hs_drop', outer_index=p_p,
+            body=(m.Hs[m.fht_pfn_s[p_p]] - m.Hs[m.fht_ptn_s[p_p]]
+                  - m.K[m.fht_orig[p_p]]
+                  * m.ms[m.fht_orig[p_p]] ** 2
+                  * Sign(m.ms[m.fht_orig[p_p]])),
+            model=m)
+        m.fht_Hr_drop = LoopEqn(
+            'fht_Hr_drop', outer_index=p_p,
+            body=(m.Hr[m.fht_ptn_s[p_p]] - m.Hr[m.fht_pfn_s[p_p]]
+                  - m.K[m.fht_orig[p_p]]
+                  * m.mr[m.fht_orig[p_p]] ** 2
+                  * Sign(m.mr[m.fht_orig[p_p]])),
+            model=m)
+
+        # --- slack pressure ---
+        m.Hs_slack = Eqn("Hs_slack",
+                           m.Hs[df.slack_node[0]] - m.Hset_s)
+        m.Hr_slack = Eqn("Hr_slack",
+                           m.Hr[df.slack_node[0]] - m.Hset_r)
+
+        # --- leak mass flow ---
+        m.leak_rate = TimeSeriesParam("leak_rate", [0, 0], [0, 100])
+        if dff.fault_sys == 's':
+            rhs_ls = (m.m_leak[0] - m.leak_rate * m.S_leak
+                      * (2 * m.g * m.Hs[leak_node]) ** 0.5)
+            rhs_lr = m.m_leak[1]
+        elif dff.fault_sys == 'r':
+            rhs_ls = m.m_leak[0]
+            rhs_lr = (m.m_leak[1] - m.leak_rate * m.S_leak
+                      * (2 * m.g * m.Hr[leak_node]) ** 0.5)
+        else:
+            raise ValueError(f"Unknown fault_sys: {dff.fault_sys}")
+        m.leak_mass_flow_sup = Eqn("leak_mass_flow_sup", rhs_ls)
+        m.leak_mass_flow_ret = Eqn("leak_mass_flow_ret", rhs_lr)
+
+        # --- phi balance (non-slack LoopEqn + slack scalar) ---
+        body_phi = (
+            m.fht_is_source[ns_idx] * (m.phi[ns_idx] - m.Cp / 1e6
+                * Abs(m.min[ns_idx]) * (m.Tsource[ns_idx] - m.Tr[ns_idx]))
+            + m.fht_is_load[ns_idx] * (m.phi[ns_idx] - m.Cp / 1e6
+                * Abs(m.min[ns_idx]) * (m.Ts[ns_idx] - m.Tload[ns_idx]))
+            + m.fht_is_inter[ns_idx] * m.min[ns_idx]
+        )
+        m.phi_balance = LoopEqn(
+            'phi_balance', outer_index=i_ns, body=body_phi, model=m)
+        m.phi_slack = Eqn(
+            "phi_slack",
+            m.phi[slack] - m.Cp / 1e6 * Abs(m.min[slack])
+            * (m.Ts_slack - m.Tr[slack]))
 
         return m
