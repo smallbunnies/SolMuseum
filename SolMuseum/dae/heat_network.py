@@ -1,7 +1,8 @@
 import numpy as np
+import sympy as sp
 from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model, TimeSeriesParam, Var, Abs, heaviside, exp, Sign
-from Solverz import Idx, LoopEqn, Sum
+from Solverz import Idx, LoopEqn, LoopOde, Sum
 from Solverz.utilities.type_checker import is_number
 from SolUtil import DhsFlow, DhsFaultFlow
 
@@ -251,8 +252,36 @@ class heat_network:
     # exactly the same per-pipe algebra as before, so the kt2
     # discretization is unchanged. Setting ``T_offset`` default to
     # ``0`` keeps the legacy call sites working verbatim.
-    # ------------------------------------------------------------------
     def _mdl_loopeqn(self, dx, dt, method, dynamic_slack):
+        """Build the heat-network model using LoopEqn / LoopOde.
+
+        Flat layout
+        -----------
+        ``Tsp_all`` (and ``Trp_all``) packs all pipes into one Var:
+
+            [ state_cells_pipe0 | state_cells_pipe1 | ... | BC_cells ]
+
+        State cells (M_j per pipe) are contiguous at the front so a
+        single cross-pipe ``LoopOde`` can use
+        ``diff_var = Tsp_all[0:total_state]``.  BC cells (1 per pipe,
+        the inlet node temperature) sit at the tail.
+
+        Equation structure
+        ------------------
+        * **Mass_flow_continuity** — LoopEqn over all nodes
+        * **loop_pressure** — scalar Eqn (if the network has loops)
+        * **Supply / Return_pipe_inlet_temp** — LoopEqn over all pipes
+          (algebraic BC: inlet cell = node temp)
+        * **Ts_mixing / phi_balance** — LoopEqn over non-slack nodes
+          (indirect outer index skipping the slack node, because the
+          slack row references the scalar ``Ts_slack`` Var whose
+          Jacobian LoopEqn cannot compute). Scalar Eqns
+          ``Ts_mixing_slack`` and ``phi_slack`` cover the slack node.
+        * **Tr_mixing** — LoopEqn over all nodes (no Ts_slack dep)
+        * **heat_pipe_s / heat_pipe_r** — ONE cross-pipe LoopOde per
+          side, iterating every state cell across all pipes in a
+          single for-loop via pre-computed index-mapping Params.
+        """
         m = Model()
         Tamb = self.df.Ta
         Cp = 4182
@@ -261,53 +290,78 @@ class heat_network:
         m.Ts = Var('Ts', self.df.Ts)
         m.Tr = Var('Tr', self.df.Tr)
         m.min = Var('min', self.df.minset)
-        m.Tsource = Param('Tsource', self.df.hc['Ts'])
-        m.Tload = Param('Tload', self.df.hc['Tr'])
-        if dynamic_slack:
-            m.Ts_slack = Var('Ts_slack', self.df.Ts[self.df.slack_node])
-        m.lam_heat_pipe = Param('lam_heat_pipe', self.df.lam)
         m.Cp = Param('Cp', Cp)
         m.phi = Var('phi', self.df.phi)
         m.rho = Param('rho', 958.4)
         m.S = Param('S', self.df.S)
+        if dynamic_slack:
+            m.Ts_slack = Var('Ts_slack', self.df.Ts[self.df.slack_node])
+        m.lam_heat_pipe = Param('lam_heat_pipe', self.df.lam)
 
-        L = self.df.L
-        M = np.floor(L / dx).astype(int)
         n_node = self.df.n_node
         n_pipe = self.df.n_pipe
+        L = self.df.L
+        M = np.floor(L / dx).astype(int)
 
-        # --- offsets and flat initial profiles ---
-        offsets = np.zeros(n_pipe + 1, dtype=int)
+        # --- node-type mask Params ---
+        def _mask(idx_set):
+            a = np.zeros(n_node)
+            for idx in idx_set:
+                a[int(idx)] = 1.0
+            return a
+
+        is_source_arr = _mask(
+            np.asarray(self.df.s_node).tolist()
+            + np.asarray(self.df.slack_node).tolist())
+        is_load_arr = _mask(np.asarray(self.df.l_node).tolist())
+        is_inter_arr = _mask(np.asarray(self.df.I_node).tolist())
+        m.is_source = Param('is_source', is_source_arr)
+        m.is_load = Param('is_load', is_load_arr)
+        m.is_inter = Param('is_inter', is_inter_arr)
+
+        m.Tsource = Param('Tsource', np.array(self.df.hc['Ts'], dtype=float))
+        m.Tload = Param('Tload', self.df.hc['Tr'])
+
+        # --- flat Tsp_all / Trp_all layout ---
+        # [0 .. total_state)          — state cells of all pipes
+        # [total_state .. total_len)  — BC (inlet) cells, one per pipe
+        state_offsets = np.zeros(n_pipe + 1, dtype=int)
         for j in range(n_pipe):
-            offsets[j + 1] = offsets[j] + int(M[j]) + 1
-        total_len = int(offsets[-1])
+            state_offsets[j + 1] = state_offsets[j] + int(M[j])
+        total_state = int(state_offsets[-1])
+        total_len = total_state + n_pipe
+
         Tsp0_all = np.empty(total_len)
         Trp0_all = np.empty(total_len)
         for j in range(n_pipe):
             attenuation = np.exp(- self.df.lam[j] * self.df.L[j]
                                   / (Cp * np.abs(self.df.m[j])))
-            # supply pipe initial profile
-            Tstart = self.df.Ts[self.df.pipe_from[j]]
-            Tend = (Tstart - Tamb[0]) * attenuation + Tamb[0]
-            Tsp0_all[offsets[j]:offsets[j + 1]] = np.linspace(
-                Tstart, Tend, int(M[j]) + 1)
-            # return pipe initial profile
-            Tstart = self.df.Tr[self.df.pipe_to[j]]
-            Tend = (Tstart - Tamb[0]) * attenuation + Tamb[0]
-            Trp0_all[offsets[j]:offsets[j + 1]] = np.linspace(
-                Tstart, Tend, int(M[j]) + 1)
-
+            Mj = int(M[j])
+            soff = int(state_offsets[j])
+            profile_s = np.linspace(
+                self.df.Ts[self.df.pipe_from[j]],
+                (self.df.Ts[self.df.pipe_from[j]] - Tamb[0]) * attenuation + Tamb[0],
+                Mj + 1)
+            Tsp0_all[soff:soff + Mj] = profile_s[1:]
+            Tsp0_all[total_state + j] = profile_s[0]
+            profile_r = np.linspace(
+                self.df.Tr[self.df.pipe_to[j]],
+                (self.df.Tr[self.df.pipe_to[j]] - Tamb[0]) * attenuation + Tamb[0],
+                Mj + 1)
+            Trp0_all[soff:soff + Mj] = profile_r[1:]
+            Trp0_all[total_state + j] = profile_r[0]
         m.Tsp_all = Var('Tsp_all', Tsp0_all)
         m.Trp_all = Var('Trp_all', Trp0_all)
 
-        pipe_inlet_idx_arr = offsets[:-1].astype(np.int64)
-        pipe_outlet_idx_arr = (offsets[:-1] + M).astype(np.int64)
-        pipe_from_node_arr = np.asarray(self.df.pipe_from, dtype=np.int64)
-        pipe_to_node_arr = np.asarray(self.df.pipe_to, dtype=np.int64)
+        # --- pipe-level index Params ---
+        pipe_inlet_idx_arr = (total_state + np.arange(n_pipe)).astype(np.int64)
+        pipe_outlet_idx_arr = (state_offsets[:-1] + M - 1).astype(np.int64)
         m.pipe_inlet_idx = Param('pipe_inlet_idx', pipe_inlet_idx_arr, dtype=int)
         m.pipe_outlet_idx = Param('pipe_outlet_idx', pipe_outlet_idx_arr, dtype=int)
-        m.pipe_from_node = Param('pipe_from_node', pipe_from_node_arr, dtype=int)
-        m.pipe_to_node = Param('pipe_to_node', pipe_to_node_arr, dtype=int)
+        m.pipe_from_node = Param('pipe_from_node',
+                                  np.asarray(self.df.pipe_from, dtype=np.int64), dtype=int)
+        m.pipe_to_node = Param('pipe_to_node',
+                                np.asarray(self.df.pipe_to, dtype=np.int64), dtype=int)
 
         # --- sparse node×pipe incidence matrices ---
         V_in_arr = np.zeros((n_node, n_pipe))
@@ -322,100 +376,88 @@ class heat_network:
         m.V_out = Param('V_out', csc_array(V_out_arr), dim=2, sparse=True)
         m.V_net = Param('V_net', csc_array(V_net_arr), dim=2, sparse=True)
 
-        # --- node-type masks for Tr_mixing LoopEqn ---
-        #
-        # Ts_mixing and phi_balance still reference the scalar
-        # ``Ts_slack`` Var under ``dynamic_slack=True``, which
-        # triggers Solverz's "Matrix derivative of scalar variables
-        # not supported" guard in JacBlock. Keeping them as legacy
-        # per-node scalar Eqns sidesteps the issue for now; only
-        # ``Tr_mixing`` (which never touches ``Ts_slack``) is
-        # LoopEqn-ified here.
-        l_list = np.asarray(self.df.l_node).tolist()
-
-        def _mask(idx_set):
-            a = np.zeros(n_node)
-            for idx in idx_set:
-                a[int(idx)] = 1.0
-            return a
-
-        is_load_arr = _mask(l_list)
-        m.is_load = Param('is_load', is_load_arr)
-
-        # Indices shared by every LoopEqn below.
+        # --- shared LoopEqn indices ---
         i_n = Idx('i_n', n_node)
         p_p = Idx('p_p', n_pipe)
 
-        # --- mass continuity LoopEqn ---
-        body_mass = -m.min[i_n] + Sum(m.V_net[i_n, p_p] * m.m[p_p], p_p)
+        # --- mass continuity ---
         m.Mass_flow_continuity = LoopEqn(
-            'Mass_flow_continuity',
-            outer_index=i_n,
-            body=body_mass,
-            model=m,
-        )
+            'Mass_flow_continuity', outer_index=i_n,
+            body=-m.min[i_n] + Sum(m.V_net[i_n, p_p] * m.m[p_p], p_p),
+            model=m)
 
         # --- loop pressure (single scalar) ---
         if len(self.df.pinloop) > 0 and not np.all(self.df.pinloop == 0):
             m.K = Param('K', self.df.K)
             rhs = 0
-            for i in range(self.df.n_pipe):
+            for i in range(n_pipe):
                 rhs += m.K[i] * m.m[i] ** 2 * Sign(m.m[i]) * self.df.pinloop[i]
             m.loop_pressure = Eqn("loop_pressure", rhs)
 
-        # --- per-pipe inlet temperature BC as LoopEqns ---
-        # Supply: Tsp_all[pipe_inlet_idx[p]] = Ts[pipe_from_node[p]]
+        # --- per-pipe inlet temperature BC ---
         m.Supply_pipe_inlet_temp = LoopEqn(
-            'Supply_pipe_inlet_temp',
-            outer_index=p_p,
+            'Supply_pipe_inlet_temp', outer_index=p_p,
             body=(m.Tsp_all[m.pipe_inlet_idx[p_p]]
                   - m.Ts[m.pipe_from_node[p_p]]),
-            model=m,
-        )
-        # Return: Trp_all[pipe_inlet_idx[p]] = Tr[pipe_to_node[p]]
+            model=m)
         m.Return_pipe_inlet_temp = LoopEqn(
-            'Return_pipe_inlet_temp',
-            outer_index=p_p,
+            'Return_pipe_inlet_temp', outer_index=p_p,
             body=(m.Trp_all[m.pipe_inlet_idx[p_p]]
                   - m.Tr[m.pipe_to_node[p_p]]),
-            model=m,
+            model=m)
+
+        # --- Ts/Tr mixing and phi balance ---
+        # Ts_slack is a scalar Var whose Jacobian entries LoopEqn's
+        # derivative machinery cannot produce (it only differentiates
+        # w.r.t. IndexedBase Vars, not bare iVars). Under
+        # dynamic_slack we therefore loop over the n_node-1 non-slack
+        # nodes via an indirect outer index and handle the slack node
+        # with a pair of scalar Eqns (Ts_mixing_slack, phi_slack).
+        if dynamic_slack:
+            slack = int(self.df.slack_node[0])
+            non_slack = np.array([i for i in range(n_node) if i != slack],
+                                  dtype=np.int64)
+            m.non_slack_idx = Param('non_slack_idx', non_slack, dtype=int)
+            i_ns = Idx('i_ns', len(non_slack))
+            node_idx = m.non_slack_idx[i_ns]
+        else:
+            i_ns = i_n
+            node_idx = i_n
+
+        # supply temperature mixing
+        body_Ts_lhs = (
+            m.is_source[node_idx] * Abs(m.min[node_idx])
+            + Sum(m.V_in[node_idx, p_p] * heaviside(m.m[p_p]) * Abs(m.m[p_p]), p_p)
+            + Sum(m.V_out[node_idx, p_p] * (1 - heaviside(m.m[p_p])) * Abs(m.m[p_p]), p_p)
         )
+        body_Ts_rhs = (
+            m.is_source[node_idx] * m.Tsource[node_idx] * Abs(m.min[node_idx])
+            + Sum(m.V_in[node_idx, p_p] * heaviside(m.m[p_p]) * Abs(m.m[p_p])
+                  * m.Tsp_all[m.pipe_outlet_idx[p_p]], p_p)
+            + Sum(m.V_out[node_idx, p_p] * (1 - heaviside(m.m[p_p])) * Abs(m.m[p_p])
+                  * m.Tsp_all[m.pipe_inlet_idx[p_p]], p_p)
+        )
+        m.Ts_mixing = LoopEqn(
+            'Ts_mixing', outer_index=i_ns,
+            body=m.Ts[node_idx] * body_Ts_lhs - body_Ts_rhs, model=m)
 
-        # --- supply temperature mixing: legacy scalar per-node Eqn.
-        #     Under ``dynamic_slack=True`` the slack row references
-        #     ``m.Ts_slack`` (a length-1 Var) which trips the
-        #     "Matrix derivative of scalar variables not supported"
-        #     guard in Solverz's JacBlock when the LoopEqn row is
-        #     differentiated against it. Until that guard is relaxed,
-        #     we keep Ts_mixing as per-node scalar Eqns. It still
-        #     references the flat ``Tsp_all`` so the per-pipe Vars
-        #     stay fully retired.
-        M_arr = M
-        for node in range(n_node):
-            lhs = 0
-            rhs = 0
-            if node in self.df.s_node.tolist() + self.df.slack_node.tolist():
-                lhs += Abs(m.min[node])
-                if node in self.df.slack_node.tolist() and dynamic_slack:
-                    rhs += m.Ts_slack * Abs(m.min[node])
-                else:
-                    rhs += m.Tsource[node] * Abs(m.min[node])
-            for edge in self.df.G.in_edges(node, data=True):
+        if dynamic_slack:
+            lhs_s = Abs(m.min[slack])
+            rhs_s = m.Ts_slack * Abs(m.min[slack])
+            for edge in self.df.G.in_edges(slack, data=True):
                 pipe = edge[2]['idx']
-                outlet = int(offsets[pipe]) + int(M_arr[pipe])
-                Toutsj = m.Tsp_all[outlet]
-                lhs += heaviside(m.m[pipe]) * Abs(m.m[pipe])
-                rhs += heaviside(m.m[pipe]) * (Toutsj * Abs(m.m[pipe]))
-            for edge in self.df.G.out_edges(node, data=True):
+                out_idx = int(state_offsets[pipe]) + int(M[pipe]) - 1
+                lhs_s += heaviside(m.m[pipe]) * Abs(m.m[pipe])
+                rhs_s += heaviside(m.m[pipe]) * m.Tsp_all[out_idx] * Abs(m.m[pipe])
+            for edge in self.df.G.out_edges(slack, data=True):
                 pipe = edge[2]['idx']
-                inlet = int(offsets[pipe])
-                Toutsj = m.Tsp_all[inlet]
-                lhs += (1 - heaviside(m.m[pipe])) * Abs(m.m[pipe])
-                rhs += (1 - heaviside(m.m[pipe])) * (Toutsj * Abs(m.m[pipe]))
-            lhs *= m.Ts[node]
-            m.__dict__[f"Ts_{node}"] = Eqn(f"Ts_{node}", lhs - rhs)
+                in_idx = total_state + pipe
+                lhs_s += (1 - heaviside(m.m[pipe])) * Abs(m.m[pipe])
+                rhs_s += (1 - heaviside(m.m[pipe])) * m.Tsp_all[in_idx] * Abs(m.m[pipe])
+            m.Ts_mixing_slack = Eqn(
+                "Ts_mixing_slack", m.Ts[slack] * lhs_s - rhs_s)
 
-        # --- return temperature mixing LoopEqn ---
+        # return temperature mixing (full n_node — no Ts_slack dependency)
         body_Tr = (
             m.Tr[i_n] * (
                 m.is_load[i_n] * Abs(m.min[i_n])
@@ -429,48 +471,121 @@ class heat_network:
                   * m.Trp_all[m.pipe_inlet_idx[p_p]], p_p)
         )
         m.Tr_mixing = LoopEqn(
-            'Tr_mixing', outer_index=i_n, body=body_Tr, model=m,
+            'Tr_mixing', outer_index=i_n, body=body_Tr, model=m)
+
+        # heat power balance
+        body_phi = (
+            m.is_source[node_idx] * (m.phi[node_idx] - m.Cp / 1e6 * Abs(m.min[node_idx])
+                                      * (m.Tsource[node_idx] - m.Tr[node_idx]))
+            + m.is_load[node_idx] * (m.phi[node_idx] - m.Cp / 1e6 * Abs(m.min[node_idx])
+                                      * (m.Ts[node_idx] - m.Tload[node_idx]))
+            + m.is_inter[node_idx] * m.min[node_idx]
         )
+        m.phi_balance = LoopEqn(
+            'phi_balance', outer_index=i_ns, body=body_phi, model=m)
 
-        # --- temperature drop: PDE per pipe via classic ``heat_pipe``.
-        #     Flat ``Tsp_all`` / ``Trp_all`` + per-pipe ``T_offset``
-        #     so the kt2 / iu / yao stencils target the right
-        #     segment without changing ``heat_pipe`` itself.
-        #     (An experimental LoopOde-based wrapper
-        #     ``heat_pipe_loop`` lives alongside ``heat_pipe.py`` —
-        #     a session-closed prototype that symbolic-AD's too
-        #     slowly on the kt2 ``minmod`` body for the IES scale
-        #     to be production-viable; kept as a starting point
-        #     for a future sparsity-pre-built rewrite.)
-        for j in range(n_pipe):
-            off_j = int(offsets[j])
-            m.add(heat_pipe(m.Tsp_all, m.m[j], m.lam_heat_pipe[j],
-                             m.rho, m.Cp, m.S[j], m.Tamb, dx, dt,
-                             int(M[j]), 's' + str(j),
-                             method=method, T_offset=off_j))
-            m.add(heat_pipe(m.Trp_all, m.m[j], m.lam_heat_pipe[j],
-                             m.rho, m.Cp, m.S[j], m.Tamb, dx, dt,
-                             int(M[j]), 'r' + str(j),
-                             method=method, T_offset=off_j))
+        if dynamic_slack:
+            m.phi_slack = Eqn(
+                "phi_slack",
+                m.phi[slack] - m.Cp / 1e6 * Abs(m.min[slack])
+                * (m.Ts_slack - m.Tr[slack]))
 
-        # --- heat power: legacy scalar per-node (same Ts_slack
-        #     scalar-Var Jacobian limitation as Ts_mixing). ---
-        for node in range(n_node):
-            phi = m.phi[node]
-            if node in self.df.slack_node.tolist():
-                if dynamic_slack:
-                    rhs = phi - m.Cp / 1e6 * Abs(m.min[node]) * (m.Ts_slack - m.Tr[node])
-                else:
-                    rhs = phi - m.Cp / 1e6 * Abs(m.min[node]) * (m.Tsource[node] - m.Tr[node])
-            elif node in self.df.s_node.tolist():
-                rhs = phi - m.Cp / 1e6 * Abs(m.min[node]) * (m.Tsource[node] - m.Tr[node])
-            elif node in self.df.l_node:
-                rhs = phi - m.Cp / 1e6 * Abs(m.min[node]) * (m.Ts[node] - m.Tload[node])
-            elif node in self.df.I_node:
-                rhs = m.min[node]
-            m.__dict__[f'phi_{node}'] = Eqn(f"phi_{node}", rhs)
+        # --- temperature drop: cross-pipe LoopOde ---
+        _add_heat_pipe_loopode(m, M, n_pipe, state_offsets,
+                                total_state, dx)
 
         return m
+
+
+def _add_heat_pipe_loopode(m, M, n_pipe, state_offsets, total_state, dx):
+    """Build ONE cross-pipe LoopOde per side (supply / return).
+
+    Instead of 3 scalar Odes per pipe (head / interior / tail) times
+    n_pipe, this produces a single ``LoopOde`` whose for-loop
+    iterates every state cell across all pipes. The generated
+    ``inner_F`` contains one ``for g in range(total_state):`` loop.
+
+    Stencil addressing
+    ------------------
+    The kt2 4-point stencil ``T[k-1], T[k], T[k+1], T[k+2]``
+    can't simply use ``g-1 / g+1`` because the first cell of
+    each pipe borders a BC cell (not the previous pipe's last
+    cell). Pre-computed Param arrays resolve this:
+
+    * ``cell_pipe[g]``  — which pipe cell *g* belongs to
+    * ``pos_left[g]``   — Tsp_all index of T[k]:
+      head → BC cell at ``total_state + pipe``;
+      interior → ``g - 1``
+    * ``pos_leftleft[g]`` — T[k-1], clamped for head/second cell
+    * ``pos_right[g]``    — T[k+2], clamped for tail
+    * ``cell_is_head/tail[g]`` — boundary masks (1.0 / 0.0);
+      head and tail cells use the 2-point kt1 stencil,
+      interior cells use the 4-point kt2 stencil.
+
+    Per-pipe parameters (``m``, ``lam``, ``S``) are accessed via
+    ``m.m[cell_pipe[g]]`` — nested indirect indexing.
+    """
+    from SolMuseum.pde.heat.kt1.kt1_pipe import kt1_ode
+    from SolMuseum.pde.heat.kt2.kt2_pipe import kt2_ode
+
+    # --- build per-cell index-mapping arrays ---
+    pos_left = np.empty(total_state, dtype=np.int64)
+    pos_leftleft = np.empty(total_state, dtype=np.int64)
+    pos_right = np.empty(total_state, dtype=np.int64)
+    cell_pipe_idx = np.empty(total_state, dtype=np.int64)
+    cell_is_head = np.zeros(total_state)
+    cell_is_tail = np.zeros(total_state)
+    for j in range(n_pipe):
+        bc = total_state + j          # BC cell position in Tsp_all
+        soff = int(state_offsets[j])   # first state cell of pipe j
+        Mj = int(M[j])
+        for k in range(Mj):
+            g = soff + k
+            cell_pipe_idx[g] = j
+            # left neighbour: BC cell at pipe head, previous state cell otherwise
+            pos_left[g] = bc if k == 0 else g - 1
+            # two-left neighbour (kt2 arg0): clamped at head (dummy,
+            # masked out) and second cell (BC cell)
+            pos_leftleft[g] = g if k == 0 else (bc if k == 1 else g - 2)
+            # right neighbour (kt2 arg3): clamped at tail (dummy, masked out)
+            pos_right[g] = g if k == Mj - 1 else g + 1
+            if k == 0:
+                cell_is_head[g] = 1.0
+            if k == Mj - 1:
+                cell_is_tail[g] = 1.0
+
+    m.cell_pipe = Param('cell_pipe', cell_pipe_idx, dtype=int)
+    m.cell_is_head = Param('cell_is_head', cell_is_head)
+    m.cell_is_tail = Param('cell_is_tail', cell_is_tail)
+    m.pos_left = Param('pos_left', pos_left, dtype=int)
+    m.pos_leftleft = Param('pos_leftleft', pos_leftleft, dtype=int)
+    m.pos_right = Param('pos_right', pos_right, dtype=int)
+    if not hasattr(m, 'theta'):
+        m.theta = Param('theta', 1)
+
+    # --- one LoopOde per side (supply / return) ---
+    for side, T_var in [('s', m.Tsp_all), ('r', m.Trp_all)]:
+        g = Idx(f'g_{side}', total_state)
+        T_ib = sp.IndexedBase(T_var.name)
+        j_idx = m.cell_pipe[g]             # pipe index for cell g
+        mask_edge = m.cell_is_head[g] + m.cell_is_tail[g]
+
+        # head / tail: 2-point upwind (kt1)
+        kt1_term = kt1_ode(
+            T_ib[m.pos_left[g]], T_ib[g],
+            m.m[j_idx], m.lam_heat_pipe[j_idx],
+            m.rho, m.Cp, m.S[j_idx], m.Tamb, dx)
+        # interior: 4-point TVD (kt2)
+        kt2_term = kt2_ode(
+            T_ib[m.pos_leftleft[g]], T_ib[m.pos_left[g]],
+            T_ib[g], T_ib[m.pos_right[g]],
+            m.m[j_idx], m.lam_heat_pipe[j_idx],
+            m.rho, m.Cp, m.S[j_idx], m.Tamb, m.theta, dx)
+
+        body = mask_edge * kt1_term + (1 - mask_edge) * kt2_term
+        m.__dict__[f'heat_pipe_{side}'] = LoopOde(
+            f'heat_pipe_{side}', outer_index=g, body=body,
+            diff_var=T_var[0:total_state], model=m)
 
 
 class fault_heat_network:
