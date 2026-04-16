@@ -497,7 +497,9 @@ class heat_network:
         return m
 
 
-def _add_heat_pipe_loopode(m, M, n_pipe, state_offsets, total_state, dx):
+def _add_heat_pipe_loopode(m, M, n_pipe, state_offsets, total_state, dx,
+                           mass_flow_s=None, mass_flow_r=None,
+                           pipe_idx_map=None):
     """Build ONE cross-pipe LoopOde per side (supply / return).
 
     Instead of 3 scalar Odes per pipe (head / interior / tail) times
@@ -564,22 +566,34 @@ def _add_heat_pipe_loopode(m, M, n_pipe, state_offsets, total_state, dx):
         m.theta = Param('theta', 1)
 
     # --- one LoopOde per side (supply / return) ---
-    for side, T_var in [('s', m.Tsp_all), ('r', m.Trp_all)]:
+    # mass_flow_s / mass_flow_r: per-side mass flow Var.
+    # Normal heat_network passes None → uses m.m for both.
+    # fault_heat_network passes m.ms / m.mr.
+    if mass_flow_s is None:
+        mass_flow_s = m.m
+    if mass_flow_r is None:
+        mass_flow_r = m.m
+    for side, T_var, m_var in [('s', m.Tsp_all, mass_flow_s),
+                                ('r', m.Trp_all, mass_flow_r)]:
         g = Idx(f'g_{side}', total_state)
         T_ib = sp.IndexedBase(T_var.name)
-        j_idx = m.cell_pipe[g]             # pipe index for cell g
+        j_idx = m.cell_pipe[g]
+        # If pipe_idx_map is set, map order index → original pipe
+        # index for mass flow / lam / S lookups.
+        if pipe_idx_map is not None:
+            m_idx = pipe_idx_map[j_idx]
+        else:
+            m_idx = j_idx
         mask_edge = m.cell_is_head[g] + m.cell_is_tail[g]
 
-        # head / tail: 2-point upwind (kt1)
         kt1_term = kt1_ode(
             T_ib[m.pos_left[g]], T_ib[g],
-            m.m[j_idx], m.lam_heat_pipe[j_idx],
+            m_var[m_idx], m.lam_heat_pipe[j_idx],
             m.rho, m.Cp, m.S[j_idx], m.Tamb, dx)
-        # interior: 4-point TVD (kt2)
         kt2_term = kt2_ode(
             T_ib[m.pos_leftleft[g]], T_ib[m.pos_left[g]],
             T_ib[g], T_ib[m.pos_right[g]],
-            m.m[j_idx], m.lam_heat_pipe[j_idx],
+            m_var[m_idx], m.lam_heat_pipe[j_idx],
             m.rho, m.Cp, m.S[j_idx], m.Tamb, m.theta, dx)
 
         body = mask_edge * kt1_term + (1 - mask_edge) * kt2_term
@@ -895,7 +909,7 @@ class fault_heat_network:
         """
         dff = self.dff
         df = dff.df
-        Tamb = df.Ta
+        Tamb = float(np.asarray(df.Ta).flat[0])
         Cp = 4182
         n_node = df.n_node
         leak_node = n_node
@@ -1033,12 +1047,15 @@ class fault_heat_network:
         p_p = Idx('p_p', n_real)
         i_reg = Idx('i_reg', n_node)
 
-        # Non-slack for Ts_mixing + phi_balance
+        # Non-special nodes for Ts_mixing + phi_balance:
+        # exclude slack (Ts_slack scalar Var) AND leak node (m.min
+        # doesn't cover it — minset[:-1] has n_node entries).
         slack = int(df.slack_node[0])
-        non_slack = np.array([i for i in range(n_total) if i != slack],
-                              dtype=np.int64)
-        m.fht_ns = Param('fht_ns', non_slack, dtype=int)
-        i_ns = Idx('i_ns', len(non_slack))
+        special = {slack, leak_node}
+        non_special = np.array([i for i in range(n_total)
+                                 if i not in special], dtype=np.int64)
+        m.fht_ns = Param('fht_ns', non_special, dtype=int)
+        i_ns = Idx('i_ns', len(non_special))
         ns_idx = m.fht_ns[i_ns]
 
         # --- supply temperature mixing (non-slack LoopEqn) ---
@@ -1099,28 +1116,74 @@ class fault_heat_network:
         m.Ts_mixing_slack = Eqn("Ts_mixing_slack",
                                   m.Ts[slack] * lhs_sk - rhs_sk)
 
-        # --- return temperature mixing LoopEqn (all nodes) ---
+        # Leak node Ts_mixing (no source/load, just pipe mixing)
+        lhs_lk = 0
+        rhs_lk = 0
+        for edge in dff.HydraSup.G.in_edges(leak_node, data=True):
+            j = edge[2]['idx']
+            if j in pipe_order:
+                oi = int(pipe_outlet_pos[pipe_order[j]])
+                lhs_lk += heaviside(m.ms[j]) * Abs(m.ms[j])
+                rhs_lk += heaviside(m.ms[j]) * m.Tsp_all[oi] * Abs(m.ms[j])
+        for edge in dff.HydraSup.G.out_edges(leak_node, data=True):
+            j = edge[2]['idx']
+            if j in pipe_order:
+                ii = int(pipe_inlet_pos[pipe_order[j]])
+                lhs_lk += (1 - heaviside(m.ms[j])) * Abs(m.ms[j])
+                rhs_lk += ((1 - heaviside(m.ms[j]))
+                           * m.Tsp_all[ii] * Abs(m.ms[j]))
+        m.Ts_mixing_leak = Eqn("Ts_mixing_leak",
+                                 m.Ts[leak_node] * lhs_lk - rhs_lk)
+
+        # --- return temperature mixing LoopEqn (non-leak nodes) ---
+        # Tr_mixing references m.min which has n_node entries, so the
+        # leak node (index n_node) must be excluded and handled as a
+        # scalar Eqn below.
+        non_leak = np.array([i for i in range(n_total) if i != leak_node],
+                             dtype=np.int64)
+        m.fht_nl = Param('fht_nl', non_leak, dtype=int)
+        i_nl = Idx('i_nl', len(non_leak))
+        nl_idx = m.fht_nl[i_nl]
         body_Tr = (
-            m.Tr[i_n] * (
-                m.fht_is_load[i_n] * Abs(m.min[i_n])
-                + Sum(m.fht_V_in_r[i_n, p_p]
+            m.Tr[nl_idx] * (
+                m.fht_is_load[nl_idx] * Abs(m.min[nl_idx])
+                + Sum(m.fht_V_in_r[nl_idx, p_p]
                       * heaviside(m.mr[m.fht_orig[p_p]])
                       * Abs(m.mr[m.fht_orig[p_p]]), p_p)
-                + Sum(m.fht_V_out_r[i_n, p_p]
+                + Sum(m.fht_V_out_r[nl_idx, p_p]
                       * (1 - heaviside(m.mr[m.fht_orig[p_p]]))
                       * Abs(m.mr[m.fht_orig[p_p]]), p_p))
-            - m.fht_is_load[i_n] * m.Tload[i_n] * Abs(m.min[i_n])
-            - Sum(m.fht_V_in_r[i_n, p_p]
+            - m.fht_is_load[nl_idx] * m.Tload[nl_idx] * Abs(m.min[nl_idx])
+            - Sum(m.fht_V_in_r[nl_idx, p_p]
                   * heaviside(m.mr[m.fht_orig[p_p]])
                   * Abs(m.mr[m.fht_orig[p_p]])
                   * m.Trp_all[m.fht_pipe_outlet[p_p]], p_p)
-            - Sum(m.fht_V_out_r[i_n, p_p]
+            - Sum(m.fht_V_out_r[nl_idx, p_p]
                   * (1 - heaviside(m.mr[m.fht_orig[p_p]]))
                   * Abs(m.mr[m.fht_orig[p_p]])
                   * m.Trp_all[m.fht_pipe_inlet[p_p]], p_p)
         )
         m.Tr_mixing = LoopEqn(
-            'Tr_mixing', outer_index=i_n, body=body_Tr, model=m)
+            'Tr_mixing', outer_index=i_nl, body=body_Tr, model=m)
+
+        # Leak node Tr_mixing (scalar — no min at leak node)
+        lhs_lkr = 0
+        rhs_lkr = 0
+        for edge in dff.HydraRet.G.in_edges(leak_node, data=True):
+            j = edge[2]['idx']
+            if j in pipe_order:
+                oi = int(pipe_outlet_pos[pipe_order[j]])
+                lhs_lkr += heaviside(m.mr[j]) * Abs(m.mr[j])
+                rhs_lkr += heaviside(m.mr[j]) * m.Trp_all[oi] * Abs(m.mr[j])
+        for edge in dff.HydraRet.G.out_edges(leak_node, data=True):
+            j = edge[2]['idx']
+            if j in pipe_order:
+                ii = int(pipe_inlet_pos[pipe_order[j]])
+                lhs_lkr += (1 - heaviside(m.mr[j])) * Abs(m.mr[j])
+                rhs_lkr += ((1 - heaviside(m.mr[j]))
+                            * m.Trp_all[ii] * Abs(m.mr[j]))
+        m.Tr_mixing_leak = Eqn("Tr_mixing_leak",
+                                 m.Tr[leak_node] * lhs_lkr - rhs_lkr)
 
         # --- pipe inlet temp BC ---
         m.Supply_pipe_inlet_temp = LoopEqn(
@@ -1136,12 +1199,15 @@ class fault_heat_network:
 
         # --- heat pipe PDE (cross-pipe LoopOde) ---
         # ms/mr are indexed by original pipe idx, need lam/S too
+        S_ext = m.fht_S.v  # already extended with fault pipe S
         m.lam_heat_pipe = Param('lam_heat_pipe',
                                  np.array([lam_vals[j] for j in real_pipes]))
-        m.S = Param('S', np.array([df.S[j] for j in real_pipes]))
+        m.S = Param('S', np.array([float(S_ext[j]) for j in real_pipes]))
         M_real = np.array([M[j] for j in real_pipes])
         _add_heat_pipe_loopode(m, M_real, n_real, state_offsets,
-                                total_state, dx)
+                                total_state, dx,
+                                mass_flow_s=m.ms, mass_flow_r=m.mr,
+                                pipe_idx_map=m.fht_orig)
 
         # --- mass continuity supply (regular nodes) ---
         is_gen_reg = _mask_v(
