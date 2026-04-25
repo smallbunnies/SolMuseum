@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model
 from Solverz import Var, Abs, cos, sin
-from Solverz import Idx, LoopEqn, Sum, TimeSeriesParam
+from Solverz import Idx, LoopEqn, Sum, TimeSeriesParam, Set
 from Solverz.utilities.type_checker import is_number
 from SolUtil import PowerFlow
 from warnings import warn
@@ -186,23 +186,23 @@ class eps_network:
                 nref_pv = len(ref_pv_arr)
                 nref = len(ref_arr)
 
-                m.ref_pv_idx = Param('ref_pv_idx', ref_pv_arr, dtype=int)
+                m.ref_pv_idx = Set('ref_pv_idx', ref_pv_arr)
                 m.Vm_pinned = Param('Vm_pinned',
                                      np.asarray(Vm)[ref_pv_arr])
-                m.ref_idx = Param('ref_idx', ref_arr, dtype=int)
+                m.ref_idx = Set('ref_idx', ref_arr)
                 m.Va_pinned = Param('Va_pinned',
                                      np.asarray(Va)[ref_arr])
 
-                i_vp = Idx('i_vp', nref_pv)
-                i_vr = Idx('i_vr', nref)
+                i_vp = m.ref_pv_idx.idx('i_vp')
+                i_vr = m.ref_idx.idx('i_vr')
                 m.Vm_pin = LoopEqn(
                     'Vm_pin', outer_index=i_vp,
-                    body=m.Vm[m.ref_pv_idx[i_vp]] - m.Vm_pinned[i_vp],
+                    body=m.Vm[i_vp] - m.Vm_pinned[i_vp],
                     model=m,
                 )
                 m.Va_pin = LoopEqn(
                     'Va_pin', outer_index=i_vr,
-                    body=m.Va[m.ref_idx[i_vr]] - m.Va_pinned[i_vr],
+                    body=m.Va[i_vr] - m.Va_pinned[i_vr],
                     model=m,
                 )
             else:

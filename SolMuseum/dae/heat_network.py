@@ -2,7 +2,7 @@ import numpy as np
 import sympy as sp
 from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model, TimeSeriesParam, Var, Abs, heaviside, exp, Sign
-from Solverz import Idx, LoopEqn, LoopOde, Sum
+from Solverz import Idx, LoopEqn, LoopOde, Sum, Set
 from Solverz.utilities.type_checker import is_number
 from SolUtil import DhsFlow, DhsFaultFlow
 
@@ -417,9 +417,9 @@ class heat_network:
             slack = int(self.df.slack_node[0])
             non_slack = np.array([i for i in range(n_node) if i != slack],
                                   dtype=np.int64)
-            m.non_slack_idx = Param('non_slack_idx', non_slack, dtype=int)
-            i_ns = Idx('i_ns', len(non_slack))
-            node_idx = m.non_slack_idx[i_ns]
+            m.NonSlack = Set('NonSlack', non_slack)
+            i_ns = m.NonSlack.idx('i_ns')
+            node_idx = i_ns
         else:
             i_ns = i_n
             node_idx = i_n
@@ -1054,9 +1054,9 @@ class fault_heat_network:
         special = {slack, leak_node}
         non_special = np.array([i for i in range(n_total)
                                  if i not in special], dtype=np.int64)
-        m.fht_ns = Param('fht_ns', non_special, dtype=int)
-        i_ns = Idx('i_ns', len(non_special))
-        ns_idx = m.fht_ns[i_ns]
+        m.fht_ns = Set('fht_ns', non_special)
+        i_ns = m.fht_ns.idx('i_ns')
+        ns_idx = i_ns
 
         # --- supply temperature mixing (non-slack LoopEqn) ---
         def _mask_v(idx_set, size):
@@ -1141,9 +1141,9 @@ class fault_heat_network:
         # scalar Eqn below.
         non_leak = np.array([i for i in range(n_total) if i != leak_node],
                              dtype=np.int64)
-        m.fht_nl = Param('fht_nl', non_leak, dtype=int)
-        i_nl = Idx('i_nl', len(non_leak))
-        nl_idx = m.fht_nl[i_nl]
+        m.fht_nl = Set('fht_nl', non_leak)
+        i_nl = m.fht_nl.idx('i_nl')
+        nl_idx = i_nl
         body_Tr = (
             m.Tr[nl_idx] * (
                 m.fht_is_load[nl_idx] * Abs(m.min[nl_idx])
@@ -1241,9 +1241,9 @@ class fault_heat_network:
         non_slack_reg = np.array(
             [i for i in range(n_node) if i not in df.slack_node],
             dtype=np.int64)
-        m.fht_nsr = Param('fht_nsr', non_slack_reg, dtype=int)
-        i_nsr = Idx('i_nsr', len(non_slack_reg))
-        nsr_idx = m.fht_nsr[i_nsr]
+        m.fht_nsr = Set('fht_nsr', non_slack_reg)
+        i_nsr = m.fht_nsr.idx('i_nsr')
+        nsr_idx = i_nsr
         body_mass_ret = (
             m.fht_mrs[nsr_idx] * m.min[nsr_idx]
             + Sum(m.fht_V_in_r[nsr_idx, p_p]
