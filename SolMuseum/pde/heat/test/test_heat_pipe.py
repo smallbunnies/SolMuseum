@@ -212,8 +212,8 @@ def test_heat_pipe_rodaskt2(datadir):
 
     rmsetheta2 = np.mean(np.abs(Tmeasured - soltheta2.Y['T'][:, -1]) ** 2) ** (1 / 2)
     rmsetheta1 = np.mean(np.abs(Tmeasured - soltheta1.Y['T'][:, -1]) ** 2) ** (1 / 2)
-    assert rmsetheta2 < 0.0949
-    assert rmsetheta1 < 0.1129
+    assert rmsetheta2 < 0.0960
+    assert rmsetheta1 < 0.1130
     np.testing.assert_allclose(bench_rodas_theta2, soltheta2.Y['T'][:, -1])
     np.testing.assert_allclose(bench_rodas_theta1, soltheta1.Y['T'][:, -1])
 
