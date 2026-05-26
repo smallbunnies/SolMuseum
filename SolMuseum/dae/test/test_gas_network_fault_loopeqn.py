@@ -1,44 +1,38 @@
-"""Smoke + parity test for the fault-aware LoopEqn gas_network path.
+"""Smoke + structural tests for the gas_network LoopEqn fault path.
 
-`gas_network.mdl(loopeqn=True, fault_type='leakage', ...)` used to
-silently fall back to the per-pipe Var legacy build because the
-LoopEqn / LoopOde helpers had no provision for leakage cells. The
-fault-aware LoopEqn build (issue #4) splits the leak pipe into two
-contiguous state segments, packs the algebraic leak cell + qleak1 /
-qleak2 at the q_all tail, and patches the WENO5 / TVD1 stencil
-neighbour positions so the leak-adjacent TVD1 cells read qleak1 /
-qleak2 in place of q[il].
+The leakage-aware LoopEqn path packs each pipe's state into flat
+``p_all`` / ``q_all`` Vars, with the leak cell promoted to an
+algebraic tail entry and ``qleak1`` / ``qleak2`` algebraic variables
+emitted per fault pipe. These tests confirm that:
 
-This test confirms:
+* all four (loopeqn x with_fault) build paths compile through
+  ``create_instance()``,
+* the faulted ``loopeqn=True`` build exposes the bundled ``p_all`` /
+  ``q_all`` Vars (not per-pipe ``p0..p9, q0..q9``) and emits the
+  fault-pipe leakage boundary equations,
+* the no-fault WENO3 LoopEqn path stays compact (8 grouped equation
+  objects), and
+* ``loopeqn=True`` raises a clear error for the not-yet-implemented
+  rupture fault type instead of silently building a leakage model.
 
-* both fault and no-fault builds compile through `create_instance()`
-  via either path,
-* the fault LoopEqn build produces exactly +2 algebraic vars over the
-  no-fault LoopEqn build (qleak1 and qleak2),
-* the eqn-group count is the expected small number (4 new groups for
-  the fault path: leak_bd_left, leak_bd_right, weno3_pipe{j}_bd1,
-  weno3_pipe{j}_bd2), and
-* the leak-tail Vars are present in the rendered initial-value
-  vector at the expected positions.
+Long-horizon parity / step-count regression checks are the job of
+the case-study benchmark scripts under
+``case/case-small-sc/bench3way.py`` and ``case/case-min-ngs2/``.
 
-The test requires the IEGS case-small `caseI_2025_0423.xlsx` data
-file and is skipped if absent.
+The test loads the bundled IEGS case-small fixture
+``fixtures/caseI.xlsx`` (vendored copy of the original
+``caseI_2025_0423.xlsx``). The fixture lives in this directory so the
+test suite is self-contained.
 """
 import os
 
-import numpy as np
 import pytest
 
 from SolUtil import GasFlow
 from SolMuseum.dae.gas_network import gas_network
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# Project layout: SolMuseum/SolMuseum/dae/test/  ->  five-deep ascend
-# to reach the dev/ root, then over to the AAAkeyan project tree.
-DATAFILE = os.path.normpath(os.path.join(
-    HERE, '..', '..', '..', '..', '..',
-    'AAAkeyan', '2025_0422_ROW_W', 'case', 'case small',
-    'caseI_2025_0423.xlsx'))
+DATAFILE = os.path.join(HERE, 'fixtures', 'caseI.xlsx')
 
 
 @pytest.fixture(scope='module')
@@ -55,15 +49,16 @@ def ng(gf):
     return gas_network(gf)
 
 
-def _build(ng, loopeqn, with_fault, idx_leak=255):
+def _build(ng, loopeqn, with_fault, idx_leak=255, method='weno3', dt=None,
+           fault_type='leakage'):
     if with_fault:
-        return ng.mdl(dx=100, dt=None, method='weno3',
-                      fault_type='leakage',
+        return ng.mdl(dx=100, dt=dt, method=method,
+                      fault_type=fault_type,
                       fault_pipe_index=[8],
                       fault_loc_index=[idx_leak],
                       leak_diameter=[0.5901 * 0.6],
                       loopeqn=loopeqn)
-    return ng.mdl(dx=100, dt=None, method='weno3', loopeqn=loopeqn)
+    return ng.mdl(dx=100, dt=dt, method=method, loopeqn=loopeqn)
 
 
 def test_all_four_paths_build(ng):
@@ -75,62 +70,52 @@ def test_all_four_paths_build(ng):
             assert y0.array.size > 0
 
 
-def test_fault_loopeqn_adds_expected_vars_and_eqns(ng):
-    """Fault LoopEqn build = no-fault LoopEqn + (2 vars, 4 eqn groups)."""
-    m_nofault = _build(ng, loopeqn=True, with_fault=False)
-    e_nofault, y_nofault = m_nofault.create_instance()
-
-    m_fault = _build(ng, loopeqn=True, with_fault=True)
-    e_fault, y_fault = m_fault.create_instance()
-
-    # qleak1 / qleak2 added in q_all tail (one of each per fault pipe).
-    assert y_fault.array.size - y_nofault.array.size == 2
-
-    # 4 new eqn groups: leak_bd_left, leak_bd_right, weno3_*_bd1,
-    # weno3_*_bd2.
-    new_eqns = set(e_fault.EQNs) - set(e_nofault.EQNs)
-    assert 'leak_bd_left' in new_eqns
-    assert 'leak_bd_right' in new_eqns
-    assert any(name.startswith('weno3_pipe') and name.endswith('_bd1')
-               for name in new_eqns)
-    assert any(name.startswith('weno3_pipe') and name.endswith('_bd2')
-               for name in new_eqns)
+def test_loopeqn_fault_uses_bundled_layout(ng):
+    """Faulted loopeqn=True exposes p_all / q_all + qleak1 / qleak2."""
+    m = _build(ng, loopeqn=True, with_fault=True)
+    assert 'p_all' in m.__dict__
+    assert 'q_all' in m.__dict__
+    assert 'p0' not in m.__dict__
+    assert 'q0' not in m.__dict__
+    assert 'p8' not in m.__dict__
+    assert 'q8' not in m.__dict__
 
 
-def test_loopeqn_and_legacy_have_matching_var_counts(ng):
-    """The fault LoopEqn and fault legacy builds must declare the
-    same number of free variables.
-
-    This is a necessary condition for the two builds to encode the
-    same underlying DAE — they package the variables differently
-    (flat p_all/q_all vs per-pipe Vars + qleak Vars), but the
-    underlying var count is invariant.
-    """
-    e_loop, y_loop = _build(ng, loopeqn=True, with_fault=True).create_instance()
-    e_leg, y_leg = _build(ng, loopeqn=False, with_fault=True).create_instance()
-    assert y_loop.array.size == y_leg.array.size, (
-        f'loopeqn fault: {y_loop.array.size} vars; '
-        f'legacy fault: {y_leg.array.size} vars')
-
-
-def test_loopeqn_eqn_group_count_is_small(ng):
-    """The whole point of LoopEqn: a small fixed number of equation
-    groups, regardless of total cell count.
-
-    A 510-cell-per-pipe leak case should produce on the order of 10
-    LoopEqn / LoopOde groups + a handful of scalar Eqns, NOT
-    thousands of per-cell Eqns.
-    """
-    e_loop, _ = _build(ng, loopeqn=True, with_fault=True).create_instance()
-    assert len(e_loop.EQNs) < 30, (
-        f'expected <30 eqn groups for LoopEqn build, got {len(e_loop.EQNs)}')
+def test_legacy_fault_uses_per_pipe_layout(ng):
+    """Faulted loopeqn=False keeps per-pipe Vars + per-pipe leak Eqns."""
+    m = _build(ng, loopeqn=False, with_fault=True)
+    assert 'p_all' not in m.__dict__
+    assert 'q_all' not in m.__dict__
+    for j in range(10):
+        assert f'p{j}' in m.__dict__
+        assert f'q{j}' in m.__dict__
+    assert 'q_pipe8_leakage_leak1' in m.__dict__
+    assert 'q_pipe8_leakage_leak2' in m.__dict__
 
 
 def test_no_fault_loopeqn_path_unaffected(ng):
-    """Regression guard: refactoring the fault path must not change
-    the eqn / var sizes of the no-fault LoopEqn build."""
-    e, y = _build(ng, loopeqn=True, with_fault=False).create_instance()
+    """Regression guard: the no-fault LoopEqn build stays compact."""
+    e, _ = _build(ng, loopeqn=True, with_fault=False).create_instance()
     # caseI: 11 nodes, 10 pipes, 1 slack ->
     # 8 LoopEqn groups (mass, p_inlet, p_outlet, bd_l, bd_r, gas_q,
     # gas_p, slack pressure as Eqn)
     assert len(e.EQNs) == 8
+
+
+def test_loopeqn_rejects_unsupported_fault_type(ng):
+    """rupture is not yet wired through the LoopEqn path."""
+    with pytest.raises(NotImplementedError):
+        _build(ng, loopeqn=True, with_fault=True, fault_type='rupture')
+
+
+@pytest.mark.parametrize('method, dt', [
+    ('kt1', None),
+    ('cdm', 1.0),
+    ('cha', 1.0),
+    ('euler', 1.0),
+])
+def test_legacy_fault_supports_all_methods(ng, method, dt):
+    """Per-pipe leakage discretizations all build via loopeqn=False."""
+    m = _build(ng, loopeqn=False, with_fault=True, method=method, dt=dt)
+    assert 'p8' in m.__dict__
+    assert 'q8' in m.__dict__

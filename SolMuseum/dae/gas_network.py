@@ -122,6 +122,14 @@ class gas_network:
                      leak_diameter=None):
         """Build the gas-network model using LoopEqn / LoopOde.
 
+        Method support
+        --------------
+        The bundled-state builder below inlines a WENO3 five-point
+        interior stencil plus a TVD1 three-point boundary stencil. The
+        ``method`` argument is accepted for signature compatibility
+        with ``_mdl_legacy`` but only ``'weno3'`` is honoured. Pass
+        any other scheme through ``mdl(loopeqn=False, method=...)``.
+
         Flat layout
         -----------
         ``p_all`` / ``q_all`` pack all pipes into one Var each:
@@ -183,11 +191,9 @@ class gas_network:
         if leak_diameter is None:
             leak_diameter = []
         if fault_type not in (None, 'leakage'):
-            # 'rupture' is not yet wired through the LoopEqn path;
-            # fall back to the legacy per-pipe Var build for it.
-            return self._mdl_legacy(dx, dt, method, fault_type,
-                                    fault_pipe_index, fault_loc_index,
-                                    leak_diameter)
+            raise NotImplementedError(
+                f'_mdl_loopeqn does not yet support fault_type={fault_type!r}; '
+                f'use mdl(loopeqn=False) for rupture builds.')
 
         gf = self.gf
         n_node = gf.n_node
@@ -497,7 +503,7 @@ def _add_gas_pipe_loopode(m, M, n_pipe, n_state_per, state_offsets,
 
     Stencil
     -------
-    * WENO5 (5-point) for interior cells.
+    * WENO3 with a five-point stencil for interior cells.
     * TVD1 (3-point) for boundary cells: the left BC neighbour
       (k = 0, original cell 1), the right BC neighbour
       (k = n_state-1, original cell M-1), and for fault pipes
@@ -516,7 +522,7 @@ def _add_gas_pipe_loopode(m, M, n_pipe, n_state_per, state_offsets,
     Neighbour-position Params
     -------------------------
     p and q stencils share ``pos_m2`` / ``pos_p2`` (always identical:
-    the leak cell ``p[il]`` / ``q[il]`` is read directly by the WENO5
+    the leak cell ``p[il]`` / ``q[il]`` is read directly by the WENO3
     stencils at cells ``il-2`` and ``il+2``). They diverge in
     ``pos_m1`` / ``pos_p1`` ONLY at the TVD1 cells immediately
     bracketing the leak, where the q-side reads ``qleak1`` (at
@@ -526,9 +532,9 @@ def _add_gas_pipe_loopode(m, M, n_pipe, n_state_per, state_offsets,
     ``pos_q_p1`` (q stencil); for all non-fault cells the two pairs
     contain identical values.
 
-    Single ``cell_is_tvd1`` mask selects TVD1 vs WENO5; pos_m2 and
+    Single ``cell_is_tvd1`` mask selects TVD1 vs WENO3; pos_m2 and
     pos_p2 are set to ``g`` (dummy) at TVD1 cells, since the
-    body's WENO5 term is multiplied out by ``(1 - mask)``.
+    body's WENO3 term is multiplied out by ``(1 - mask)``.
     """
     from SolMuseum.pde.gas.weno3.weno_pipe import weno_odeq, weno_odep
 
@@ -592,7 +598,7 @@ def _add_gas_pipe_loopode(m, M, n_pipe, n_state_per, state_offsets,
                 pos_p_p1[g] = g + 1
                 pos_q_p1[g] = g + 1
 
-            # pos_m2 / pos_p2 only matter for WENO5 cells.
+            # pos_m2 / pos_p2 only matter for WENO3 cells.
             if tvd1:
                 pos_m2[g] = g
                 pos_p2[g] = g
@@ -638,7 +644,7 @@ def _add_gas_pipe_loopode(m, M, n_pipe, n_state_per, state_offsets,
     )
     tvd_p = -m.va ** 2 / m.Area[j_idx] * (q_ib[m.pos_q_p1[g]] - q_ib[m.pos_q_m1[g]]) / (2 * dx)
 
-    # WENO5 (interior cells)
+    # WENO3 interior cells
     weno_q = weno_odeq(
         p_ib[m.pos_m2[g]], p_ib[m.pos_p_m1[g]], p_ib[g],
         p_ib[m.pos_p_p1[g]], p_ib[m.pos_p2[g]],
