@@ -334,9 +334,31 @@ class eps_network:
                 value=np.zeros(nb),
             )
 
+            # Switchable transmission lines (runtime outage). Each entry
+            # of ``sw_line_stamps`` is the complex nb×nb Ybus stamp of
+            # one line (nonzero only in its 2×2 from/to block); the full
+            # ``Ybus`` already contains it, so the pre-fault PF is the
+            # intact-network equilibrium. A per-line ``line_trip`` flag
+            # (plain Param, default 0; set to 1 at runtime + DaeIc to
+            # trip) SUBTRACTS that stamp's current, removing the line.
+            # See the ``sw_line_stamps`` Notes block in the docstring.
+            sw_line_stamps = kwargs.get('sw_line_stamps', None)
+            n_sw = 0 if sw_line_stamps is None else len(sw_line_stamps)
+
             if loopeqn:
                 m.Gbus = Param('Gbus', csc_array(Gbus_eff), dim=2, sparse=True)
                 m.Bbus = Param('Bbus', csc_array(Bbus_eff), dim=2, sparse=True)
+
+                if n_sw > 0:
+                    m.line_trip = Param('line_trip', np.zeros(n_sw))
+                    for k, stamp in enumerate(sw_line_stamps):
+                        st = csc_array(stamp)
+                        m.__dict__[f'Gbus_sw_{k}'] = Param(
+                            f'Gbus_sw_{k}', csc_array(st.real),
+                            dim=2, sparse=True)
+                        m.__dict__[f'Bbus_sw_{k}'] = Param(
+                            f'Bbus_sw_{k}', csc_array(st.imag),
+                            dim=2, sparse=True)
 
                 i = Idx('i', nb)
                 j = Idx('j', nb)
@@ -354,11 +376,24 @@ class eps_network:
                     - m.G_shunt[i] * m.uy[i]
                     - m.B_shunt[i] * m.ux[i]
                 )
+                for k in range(n_sw):
+                    Gk = m.__dict__[f'Gbus_sw_{k}']
+                    Bk = m.__dict__[f'Bbus_sw_{k}']
+                    body_ix = (body_ix
+                               + m.line_trip[k] * Sum(Gk[i, j] * m.ux[j], j)
+                               - m.line_trip[k] * Sum(Bk[i, j] * m.uy[j], j))
+                    body_iy = (body_iy
+                               + m.line_trip[k] * Sum(Gk[i, j] * m.uy[j], j)
+                               + m.line_trip[k] * Sum(Bk[i, j] * m.ux[j], j))
                 m.ix_inj = LoopEqn('ix_inj', outer_index=i,
                                    body=body_ix, model=m)
                 m.iy_inj = LoopEqn('iy_inj', outer_index=i,
                                    body=body_iy, model=m)
             else:
+                if n_sw > 0:
+                    raise NotImplementedError(
+                        'sw_line_stamps (switchable line outage) is only '
+                        'supported on the loopeqn=True path.')
                 for i in range(nb):
                     rhs1 = m.ix[i]
                     rhs2 = m.iy[i]
