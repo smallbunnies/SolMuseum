@@ -190,6 +190,13 @@ class gas_network:
             fault_loc_index = []
         if leak_diameter is None:
             leak_diameter = []
+        if method != 'weno3':
+            raise NotImplementedError(
+                f"gas_network.mdl(loopeqn=True) only supports method='weno3' "
+                f"(got method={method!r}); the LoopEqn bundled-state builder "
+                f"inlines a WENO3 stencil and no other scheme is wired through "
+                f"it. Use mdl(loopeqn=False, method={method!r}) for the legacy "
+                f"per-pipe discretizations (weno3 / kt1 / cdm / cha / euler).")
         if fault_type not in (None, 'leakage'):
             raise NotImplementedError(
                 f'_mdl_loopeqn does not yet support fault_type={fault_type!r}; '
@@ -201,6 +208,55 @@ class gas_network:
         va = gf.va
         L = gf.L
         M = np.floor(L / dx).astype(int)
+
+        if (M < 2).any():
+            bad = np.where(M < 2)[0]
+            raise ValueError(
+                f'gas_network.mdl(loopeqn=True) requires floor(L/dx) >= 2 for '
+                f'every pipe so the WENO3 / TVD1 boundary stencils address '
+                f'distinct state cells. {len(bad)} pipe(s) have M < 2 at '
+                f'dx={dx}: indices {bad[:10].tolist()}'
+                f'{"..." if len(bad) > 10 else ""}, '
+                f'lengths {np.asarray(L)[bad][:10].tolist()}. A pipe with '
+                f'M = floor(L/dx) <= 1 carries no interior state cell, so its '
+                f'bd_left / bd_right characteristic-BC equations would collide '
+                f'with a neighbouring pipe\'s state and inject O(MPa) initial '
+                f'residuals. Reduce dx or remove/lengthen the short stub pipes '
+                f'before building the dynamic model.')
+
+        # type-0 (compressor) pipes cannot be represented in the dynamic
+        # LoopEqn model. Only type-1 edges populate the mass-continuity
+        # incidence Q_net, so a type-0 pipe's flow is silently dropped and
+        # leaves a phantom residual at every compressor-adjacent node;
+        # there is also no compressor pressure-boost term. Reject up front
+        # instead of building a quietly-wrong model.
+        edge_types = np.ones(n_pipe, dtype=np.int64)
+        for edge in gf.gc['G'].edges(data=True):
+            edge_types[edge[2]['idx']] = edge[2].get('type', 1)
+        if (edge_types != 1).any():
+            bad = np.where(edge_types != 1)[0]
+            raise NotImplementedError(
+                f'gas_network.mdl(loopeqn=True) only supports type-1 '
+                f'(ordinary friction) pipes. {len(bad)} non-type-1 edge(s) '
+                f'found: {bad[:10].tolist()}'
+                f'{"..." if len(bad) > 10 else ""}. Type-0 (compressor) pipes '
+                f'are dropped from the dynamic mass-continuity balance and '
+                f'have no pressure-boost model, so they cannot be represented '
+                f'here. Fold the compressor onto an adjacent type-1 pipe in '
+                f'the steady-state data, or keep the compressor in the '
+                f'SolUtil.GasFlow steady-state model only.')
+        delta = np.asarray(getattr(gf, 'delta', np.zeros(n_pipe)))
+        if delta.size and np.any(delta != 0):
+            bad = np.where(delta != 0)[0]
+            raise NotImplementedError(
+                f'gas_network.mdl(loopeqn=True) cannot apply a compressor '
+                f'pressure boost: {len(bad)} pipe(s) carry a non-zero delta '
+                f'({bad[:10].tolist()}'
+                f'{"..." if len(bad) > 10 else ""}). The dynamic LoopEqn '
+                f'pressure_outlet condition enforces Pi[to] = p_all[outlet] '
+                f'with no offset, so a non-zero delta would be ignored. Remove '
+                f'the boost from the pipe data, or model the compressor in the '
+                f'steady-state GasFlow only.')
 
         n_fault = len(fault_pipe_index)
         if n_fault > 0 and fault_type != 'leakage':

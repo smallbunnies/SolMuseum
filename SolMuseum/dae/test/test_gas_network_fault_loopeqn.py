@@ -119,3 +119,50 @@ def test_legacy_fault_supports_all_methods(ng, method, dt):
     m = _build(ng, loopeqn=False, with_fault=True, method=method, dt=dt)
     assert 'p8' in m.__dict__
     assert 'q8' in m.__dict__
+
+
+@pytest.mark.parametrize('method', ['kt1', 'cdm', 'cha', 'euler', 'weno5'])
+def test_loopeqn_rejects_non_weno3_method(ng, method):
+    """loopeqn=True only honours weno3; any other scheme must raise rather
+    than silently building a weno3 model (issue: method arg was a no-op)."""
+    with pytest.raises(NotImplementedError):
+        _build(ng, loopeqn=True, with_fault=False, method=method)
+    with pytest.raises(NotImplementedError):
+        _build(ng, loopeqn=True, with_fault=True, method=method)
+
+
+def test_loopeqn_requires_M_at_least_2(ng):
+    """floor(L/dx) < 2 collides bd_left / bd_right stencils against a
+    neighbour's state; must raise (issue #7). caseI pipes are 51 km, so
+    dx=30 km drives every pipe to M = floor(51000/30000) = 1."""
+    with pytest.raises(ValueError, match=r'floor\(L/dx\) >= 2'):
+        ng.mdl(dx=30000, loopeqn=True)
+
+
+def test_loopeqn_rejects_compressor_type0(gf):
+    """type-0 (compressor) pipes are silently dropped from mass continuity;
+    the LoopEqn path must reject them up front (issue #6)."""
+    ng2 = gas_network(gf)
+    edge = next(iter(ng2.gf.gc['G'].edges(data=True)))
+    saved = edge[2].get('type', 1)
+    edge[2]['type'] = 0
+    try:
+        with pytest.raises(NotImplementedError, match='type-1'):
+            ng2.mdl(dx=100, loopeqn=True)
+    finally:
+        edge[2]['type'] = saved
+
+
+def test_loopeqn_rejects_nonzero_delta(gf):
+    """A non-zero compressor delta has no boost term in the dynamic model;
+    reject it rather than ignore it (issue #6)."""
+    import numpy as np
+    ng2 = gas_network(gf)
+    saved = np.asarray(ng2.gf.delta).copy()
+    ng2.gf.delta = saved.copy()
+    ng2.gf.delta[0] = 1.0
+    try:
+        with pytest.raises(NotImplementedError, match='delta'):
+            ng2.mdl(dx=100, loopeqn=True)
+    finally:
+        ng2.gf.delta = saved
