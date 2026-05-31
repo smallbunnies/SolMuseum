@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.sparse import csc_array
+from scipy.sparse import csc_array, spdiags
 from Solverz import Eqn, Param, Model
 from Solverz import Var, Abs, cos, sin
 from Solverz import Idx, LoopEqn, Sum, TimeSeriesParam, Set
@@ -9,13 +9,34 @@ from warnings import warn
 from ..util import rename_mdl
 
 
+def _plus_load_impedance(Y, Pd, Qd, Vm):
+    """Fold constant-power loads (Pd, Qd at terminal voltage Vm) into
+    the diagonal of the bus admittance matrix as constant-impedance
+    shunts. Returns a new matrix without mutating ``Y``.
+
+    The fold converts an injection equation
+        I_bus = Ybus @ V          (with I_bus = I_gen − I_load)
+    into the equivalent gen-only form
+        I_gen = (Ybus + diag(Y_load)) @ V
+    where ``Y_load = (Pd − jQd) / Vm²``.
+
+    Originally provided by ``SolUtil.sysparser.eps_function.plus_load_impedance``;
+    re-implemented here so ``eps_network`` can opt in via ``mdl(fold_load=True)``
+    without callers having to perform a separate matrix mutation that
+    would desync the IC of the rectangular current vars (see the
+    ``fold_load`` parameter's docstring in ``mdl``).
+    """
+    Yload = (Pd - 1j * Qd) / (Vm ** 2)
+    return Y + spdiags(Yload, 0, *Y.shape)
+
+
 class eps_network:
 
     def __init__(self, pf: PowerFlow):
         self.pf = pf
         self.pf.run()
 
-    def mdl(self, dyn=False, loopeqn=True, **kwargs):
+    def mdl(self, dyn=False, loopeqn=True, fold_load=False, **kwargs):
         """Build the EPS network model.
 
         Parameters
@@ -31,6 +52,26 @@ class eps_network:
             sub-functions). Honored for both ``dyn=True`` and
             ``dyn=False``; pass ``loopeqn=False`` to fall back to
             the legacy per-bus scalar expansion.
+        fold_load : bool, default False
+            Only meaningful when ``dyn=True``. If True, fold the
+            constant-power loads at every bus into the diagonal of
+            ``Ybus`` as constant-impedance shunts (``Y_load = (Pd −
+            jQd) / Vm²``) AND initialise the rectangular current vars
+            ``ix``, ``iy`` to the gen-only current
+            ``conj((Pg + jQg) / U)``. The bus-current equation then
+            balances the gen current against the loaded admittance:
+            ``ix = (Y_loaded · U).real``. If False (default), use the
+            unfolded ``self.pf.Ybus`` together with the net-injection
+            IC ``conj(((Pg − Pd) + j(Qg − Qd)) / U)`` — the legacy
+            pattern that lets callers pre-fold the load themselves
+            via ``SolUtil.sysparser.eps_function.plus_load_impedance``.
+
+            **Do NOT pre-fold the load AND pass ``fold_load=True``** —
+            that double-folds and is silently wrong. The intended
+            opt-in pattern is to drop any caller-side
+            ``plus_load_impedance`` step and ask ``eps_network`` to
+            do the fold so the IC stays consistent with the rendered
+            equation.
 
         Notes
         -----
@@ -105,7 +146,16 @@ class eps_network:
             for ordinary non-fault runs.
         """
         U: np.ndarray = self.pf.Vm * np.exp(1j * self.pf.Va)
-        S: np.ndarray = (self.pf.Pg - self.pf.Pd) + 1j * (self.pf.Qg - self.pf.Qd)
+        if fold_load and dyn:
+            # Fold load into Ybus once, internally; switch IC to gen-only.
+            Ybus_eff = _plus_load_impedance(self.pf.Ybus,
+                                            self.pf.Pd, self.pf.Qd, self.pf.Vm)
+            S: np.ndarray = self.pf.Pg + 1j * self.pf.Qg
+        else:
+            Ybus_eff = self.pf.Ybus
+            S: np.ndarray = (self.pf.Pg - self.pf.Pd) + 1j * (self.pf.Qg - self.pf.Qd)
+        Gbus_eff = Ybus_eff.real
+        Bbus_eff = Ybus_eff.imag
         I = (S / U).conjugate()
 
         m = Model()
@@ -284,9 +334,31 @@ class eps_network:
                 value=np.zeros(nb),
             )
 
+            # Switchable transmission lines (runtime outage). Each entry
+            # of ``sw_line_stamps`` is the complex nb×nb Ybus stamp of
+            # one line (nonzero only in its 2×2 from/to block); the full
+            # ``Ybus`` already contains it, so the pre-fault PF is the
+            # intact-network equilibrium. A per-line ``line_trip`` flag
+            # (plain Param, default 0; set to 1 at runtime + DaeIc to
+            # trip) SUBTRACTS that stamp's current, removing the line.
+            # See the ``sw_line_stamps`` Notes block in the docstring.
+            sw_line_stamps = kwargs.get('sw_line_stamps', None)
+            n_sw = 0 if sw_line_stamps is None else len(sw_line_stamps)
+
             if loopeqn:
-                m.Gbus = Param('Gbus', csc_array(self.pf.Gbus), dim=2, sparse=True)
-                m.Bbus = Param('Bbus', csc_array(self.pf.Bbus), dim=2, sparse=True)
+                m.Gbus = Param('Gbus', csc_array(Gbus_eff), dim=2, sparse=True)
+                m.Bbus = Param('Bbus', csc_array(Bbus_eff), dim=2, sparse=True)
+
+                if n_sw > 0:
+                    m.line_trip = Param('line_trip', np.zeros(n_sw))
+                    for k, stamp in enumerate(sw_line_stamps):
+                        st = csc_array(stamp)
+                        m.__dict__[f'Gbus_sw_{k}'] = Param(
+                            f'Gbus_sw_{k}', csc_array(st.real),
+                            dim=2, sparse=True)
+                        m.__dict__[f'Bbus_sw_{k}'] = Param(
+                            f'Bbus_sw_{k}', csc_array(st.imag),
+                            dim=2, sparse=True)
 
                 i = Idx('i', nb)
                 j = Idx('j', nb)
@@ -304,18 +376,31 @@ class eps_network:
                     - m.G_shunt[i] * m.uy[i]
                     - m.B_shunt[i] * m.ux[i]
                 )
+                for k in range(n_sw):
+                    Gk = m.__dict__[f'Gbus_sw_{k}']
+                    Bk = m.__dict__[f'Bbus_sw_{k}']
+                    body_ix = (body_ix
+                               + m.line_trip[k] * Sum(Gk[i, j] * m.ux[j], j)
+                               - m.line_trip[k] * Sum(Bk[i, j] * m.uy[j], j))
+                    body_iy = (body_iy
+                               + m.line_trip[k] * Sum(Gk[i, j] * m.uy[j], j)
+                               + m.line_trip[k] * Sum(Bk[i, j] * m.ux[j], j))
                 m.ix_inj = LoopEqn('ix_inj', outer_index=i,
                                    body=body_ix, model=m)
                 m.iy_inj = LoopEqn('iy_inj', outer_index=i,
                                    body=body_iy, model=m)
             else:
+                if n_sw > 0:
+                    raise NotImplementedError(
+                        'sw_line_stamps (switchable line outage) is only '
+                        'supported on the loopeqn=True path.')
                 for i in range(nb):
                     rhs1 = m.ix[i]
                     rhs2 = m.iy[i]
 
                     for j in range(nb):
-                        rhs1 = rhs1 - self.pf.Gbus[i, j] * m.ux[j] + self.pf.Bbus[i, j] * m.uy[j]
-                        rhs2 = rhs2 - self.pf.Gbus[i, j] * m.uy[j] - self.pf.Bbus[i, j] * m.ux[j]
+                        rhs1 = rhs1 - Gbus_eff[i, j] * m.ux[j] + Bbus_eff[i, j] * m.uy[j]
+                        rhs2 = rhs2 - Gbus_eff[i, j] * m.uy[j] - Bbus_eff[i, j] * m.ux[j]
 
                     rhs1 = rhs1 - m.G_shunt[i] * m.ux[i] + m.B_shunt[i] * m.uy[i]
                     rhs2 = rhs2 - m.G_shunt[i] * m.uy[i] - m.B_shunt[i] * m.ux[i]
