@@ -25,13 +25,15 @@ class gas_network:
             fault_pipe_index=[],
             fault_loc_index=[],
             leak_diameter=[],
-            loopeqn=True):
+            loopeqn=True,
+            bundle_leak=False):
         if loopeqn:
             m = self._mdl_loopeqn(dx, dt, method,
                                   fault_type=fault_type,
                                   fault_pipe_index=fault_pipe_index,
                                   fault_loc_index=fault_loc_index,
-                                  leak_diameter=leak_diameter)
+                                  leak_diameter=leak_diameter,
+                                  bundle_leak=bundle_leak)
         else:
             m = self._mdl_legacy(dx, dt, method, fault_type,
                                  fault_pipe_index, fault_loc_index,
@@ -124,7 +126,8 @@ class gas_network:
                      fault_type=None,
                      fault_pipe_index=None,
                      fault_loc_index=None,
-                     leak_diameter=None):
+                     leak_diameter=None,
+                     bundle_leak=False):
         """Build the gas-network model using LoopEqn / LoopOde.
 
         Method support
@@ -517,34 +520,80 @@ class gas_network:
             sonic_coef = (Mass_leak / (Z_leak * R_leak * T0_leak)
                           * Hcr_leak * (2 / (Hcr_leak + 1))
                           ** ((Hcr_leak + 1) / (Hcr_leak - 1))) ** 0.5
-            for fi, j in enumerate(fault_pipe_arr):
-                pipe_name = f'pipe{int(j)}_leakage'
-                d_leak = float(leak_diameter[fi])
-                Ah_j = np.pi * (d_leak / 2) ** 2
-                is_sonic = Param(f'is_sonic_{pipe_name}', value=1)
-                m.__dict__[is_sonic.name] = is_sonic
-                leak_rate = TimeSeriesParam(
-                    f'leak_rate_{pipe_name}',
-                    v_series=[0, 0],
-                    time_series=[0, 3 * 3600])
-                m.__dict__[leak_rate.name] = leak_rate
+            if bundle_leak:
+                # Bundled leak BC: ONE LoopEqn pair over all fault pipes
+                # instead of a scalar Eqn pair per fault pipe. Collapses
+                # the 2*n_fault generated ``inner_F``/``inner_J``
+                # functions (``weno3_pipe{j}_leakage_bd1/bd2``) into two,
+                # cutting both compile time and per-step F/J evaluation
+                # cost. The per-pipe ``leak_rate``/``is_sonic`` scalars
+                # become vector Params indexed over fault pipes. Arm the
+                # leak from the case study by replacing the whole vector
+                # param, writing the ramp into the faulted pipe's slot:
+                #   slot = list(fault_pipe_index).index(faulted_pipe)
+                #   mdl.p['leak_rate_all'] = TimeSeriesParam(
+                #       'leak_rate_all', v_series=[0, 0, 1, 1],
+                #       time_series=[0, t0, t0 + ramp, tend],
+                #       index=[slot], value=np.zeros(n_fault))
+                Ah_all = np.array(
+                    [np.pi * (float(leak_diameter[fi]) / 2) ** 2
+                     for fi in range(n_fault)])
+                m.Ah_leak = Param('Ah_leak', Ah_all)
+                m.is_sonic_leak = Param('is_sonic_leak', np.ones(n_fault))
+                m.leak_rate_all = TimeSeriesParam(
+                    'leak_rate_all',
+                    v_series=[0.0, 0.0], time_series=[0.0, 3 * 3600],
+                    index=np.array([0]), value=np.zeros(n_fault))
+                P2 = m.p_all[m.leak_alg[f_idx]]
+                m.weno3_leak_bd1 = LoopEqn(
+                    'weno3_leak_bd1', outer_index=f_idx,
+                    body=(m.q_all[m.leak_alg[f_idx]]
+                          - m.leak_rate_all[f_idx] * (
+                              m.is_sonic_leak[f_idx] * m.Ah_leak[f_idx]
+                              * P2 * sonic_coef
+                              + (1 - m.is_sonic_leak[f_idx]) * C0_leak
+                                * m.Ah_leak[f_idx] * P2
+                                * (2 * Mass_leak / (Z_leak * R_leak * T0_leak)
+                                   * Hcr_leak / (Hcr_leak - 1)
+                                   * ((Pa_leak / P2) ** (2 / Hcr_leak)
+                                      - (Pa_leak / P2)
+                                      ** ((Hcr_leak + 1) / Hcr_leak))) ** 0.5)),
+                    model=m)
+                m.weno3_leak_bd2 = LoopEqn(
+                    'weno3_leak_bd2', outer_index=f_idx,
+                    body=(m.q_all[m.qleak1[f_idx]]
+                          - m.q_all[m.qleak2[f_idx]]
+                          - m.q_all[m.leak_alg[f_idx]]),
+                    model=m)
+            else:
+                for fi, j in enumerate(fault_pipe_arr):
+                    pipe_name = f'pipe{int(j)}_leakage'
+                    d_leak = float(leak_diameter[fi])
+                    Ah_j = np.pi * (d_leak / 2) ** 2
+                    is_sonic = Param(f'is_sonic_{pipe_name}', value=1)
+                    m.__dict__[is_sonic.name] = is_sonic
+                    leak_rate = TimeSeriesParam(
+                        f'leak_rate_{pipe_name}',
+                        v_series=[0, 0],
+                        time_series=[0, 3 * 3600])
+                    m.__dict__[leak_rate.name] = leak_rate
 
-                P2 = m.p_all[int(leak_alg_pipe[j])]
-                qjleak = leak_rate * (
-                    is_sonic * Ah_j * P2 * sonic_coef
-                    + (1 - is_sonic) * C0_leak * Ah_j * P2
-                      * (2 * Mass_leak / (Z_leak * R_leak * T0_leak)
-                         * Hcr_leak / (Hcr_leak - 1)
-                         * ((Pa_leak / P2) ** (2 / Hcr_leak)
-                            - (Pa_leak / P2) ** ((Hcr_leak + 1) / Hcr_leak))) ** 0.5)
-                m.__dict__[f'weno3_{pipe_name}_bd1'] = Eqn(
-                    f'weno3_{pipe_name}_bd1',
-                    m.q_all[int(leak_alg_pipe[j])] - qjleak)
-                m.__dict__[f'weno3_{pipe_name}_bd2'] = Eqn(
-                    f'weno3_{pipe_name}_bd2',
-                    m.q_all[int(qleak1_pipe[j])]
-                    - m.q_all[int(qleak2_pipe[j])]
-                    - m.q_all[int(leak_alg_pipe[j])])
+                    P2 = m.p_all[int(leak_alg_pipe[j])]
+                    qjleak = leak_rate * (
+                        is_sonic * Ah_j * P2 * sonic_coef
+                        + (1 - is_sonic) * C0_leak * Ah_j * P2
+                          * (2 * Mass_leak / (Z_leak * R_leak * T0_leak)
+                             * Hcr_leak / (Hcr_leak - 1)
+                             * ((Pa_leak / P2) ** (2 / Hcr_leak)
+                                - (Pa_leak / P2) ** ((Hcr_leak + 1) / Hcr_leak))) ** 0.5)
+                    m.__dict__[f'weno3_{pipe_name}_bd1'] = Eqn(
+                        f'weno3_{pipe_name}_bd1',
+                        m.q_all[int(leak_alg_pipe[j])] - qjleak)
+                    m.__dict__[f'weno3_{pipe_name}_bd2'] = Eqn(
+                        f'weno3_{pipe_name}_bd2',
+                        m.q_all[int(qleak1_pipe[j])]
+                        - m.q_all[int(qleak2_pipe[j])]
+                        - m.q_all[int(leak_alg_pipe[j])])
 
         # --- cross-pipe LoopOde for PDE ---
         _add_gas_pipe_loopode(m, M, n_pipe, n_state_per, state_offsets,
