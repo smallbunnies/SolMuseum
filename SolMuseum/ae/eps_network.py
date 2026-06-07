@@ -3,10 +3,12 @@ from scipy.sparse import csc_array, spdiags
 from Solverz import Eqn, Param, Model
 from Solverz import Var, Abs, cos, sin
 from Solverz import Idx, LoopEqn, Sum, TimeSeriesParam, Set
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 from SolUtil import PowerFlow
 from warnings import warn
 from ..util import rename_mdl
+from .._version import __version__ as _sm_version
 
 
 def _plus_load_impedance(Y, Pd, Qd, Vm):
@@ -407,5 +409,7 @@ class eps_network:
 
                     m.__dict__[f'ix_inj_{i}'] = Eqn(f'ix injection {i}', rhs1)
                     m.__dict__[f'iy_inj_{i}'] = Eqn(f'iy injection {i}', rhs2)
+
+        stamp_source(m, component='eps_network', package='SolMuseum', version=_sm_version)
 
         return m

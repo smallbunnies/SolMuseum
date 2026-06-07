@@ -4,7 +4,9 @@ import numpy as np
 from scipy.optimize import root
 
 from Solverz import Eqn, Model, Ode, Param, Var, atan2, cos, sin
+from Solverz import stamp_source
 from SolMuseum.util import rename_mdl
+from SolMuseum._version import __version__ as _sm_version
 
 
 INIT_TOL = 1e-10
@@ -390,4 +392,6 @@ class battery_gfm:
         m.eqn_ix = Eqn('eqn_ix_' + name, m.ix - m.base_power / m.system_base_power * m.Ir_filter)
         m.eqn_iy = Eqn('eqn_iy_' + name, m.iy - m.base_power / m.system_base_power * m.Ii_filter)
 
-        return rename_mdl(m, name)
+        m = rename_mdl(m, name)
+        stamp_source(m, component='battery_gfm', package='SolMuseum', version=_sm_version)
+        return m

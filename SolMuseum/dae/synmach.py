@@ -1,8 +1,10 @@
 from Solverz import Eqn, Ode, Param, Model, cos, sin
 from Solverz import Var
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 import numpy as np
 from SolMuseum.util import rename_mdl
+from SolMuseum._version import __version__ as _sm_version
 
 
 class synmach:
@@ -116,5 +118,7 @@ class synmach:
 
         if rename:
             m = rename_mdl(m, name)
+
+        stamp_source(m, component='synmach', package='SolMuseum', version=_sm_version)
 
         return m

@@ -1,11 +1,13 @@
 from Solverz import Ode, TimeSeriesParam, Param, Model, Saturation, exp, ln
 from Solverz import Var
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 from Solverz.num_api.Array import Array
 from sympy import re as real, im as imag
 import numpy as np
 from warnings import warn
 from SolMuseum.util import rename_mdl
+from SolMuseum._version import __version__ as _sm_version
 
 
 class pv:
@@ -230,5 +232,7 @@ class pv:
                        m.D1)
 
         m = rename_mdl(m, name)
+
+        stamp_source(m, component='pv', package='SolMuseum', version=_sm_version)
 
         return m

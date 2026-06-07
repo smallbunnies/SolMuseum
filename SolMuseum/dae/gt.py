@@ -1,10 +1,12 @@
 from Solverz import Eqn, Ode, Param, Model, Saturation, AntiWindUp, Min
 from Solverz import Var
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 import numpy as np
 
 from .synmach import synmach
 from ..util import rename_mdl
+from .._version import __version__ as _sm_version
 
 
 class gt:
@@ -165,6 +167,10 @@ class gt:
         m.WastHeatBoiler = Eqn('WastHeatBoiler_' + name, m.phi - m.c * m.Pm)
 
         m = rename_mdl(m, name)
+
+        # overwrite=False keeps the synmach sub-model's stamps; only the
+        # gt-specific equations get the gt component stamp.
+        stamp_source(m, component='gt', package='SolMuseum', version=_sm_version)
 
         return m
 
