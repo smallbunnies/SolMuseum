@@ -1,9 +1,11 @@
 import numpy as np
 from Solverz import Eqn, Param, Model
 from Solverz import Var, Abs
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 from warnings import warn
 from ..util import rename_mdl
+from .._version import __version__ as _sm_version
 
 
 class p2g:
@@ -53,6 +55,8 @@ class p2g:
 
         if rename:
             m = rename_mdl(m, name)
+
+        stamp_source(m, component='p2g', package='SolMuseum', version=_sm_version)
 
         return m
 
@@ -110,5 +114,7 @@ class eb:
 
         if rename:
             m = rename_mdl(m, name)
+
+        stamp_source(m, component='eb', package='SolMuseum', version=_sm_version)
 
         return m

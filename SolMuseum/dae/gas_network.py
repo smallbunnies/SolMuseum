@@ -3,10 +3,12 @@ import numpy as np
 from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model, Idx, LoopEqn, LoopOde, Sum, TimeSeriesParam
 from Solverz import Var, Abs
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 from SolUtil import GasFlow
 
 from SolMuseum.pde import ngs_pipe, leakage_pipe, rupture_pipe
+from SolMuseum._version import __version__ as _sm_version
 
 
 class gas_network:
@@ -25,14 +27,17 @@ class gas_network:
             leak_diameter=[],
             loopeqn=True):
         if loopeqn:
-            return self._mdl_loopeqn(dx, dt, method,
-                                     fault_type=fault_type,
-                                     fault_pipe_index=fault_pipe_index,
-                                     fault_loc_index=fault_loc_index,
-                                     leak_diameter=leak_diameter)
-        return self._mdl_legacy(dx, dt, method, fault_type,
-                                fault_pipe_index, fault_loc_index,
-                                leak_diameter)
+            m = self._mdl_loopeqn(dx, dt, method,
+                                  fault_type=fault_type,
+                                  fault_pipe_index=fault_pipe_index,
+                                  fault_loc_index=fault_loc_index,
+                                  leak_diameter=leak_diameter)
+        else:
+            m = self._mdl_legacy(dx, dt, method, fault_type,
+                                 fault_pipe_index, fault_loc_index,
+                                 leak_diameter)
+        stamp_source(m, component='gas_network', package='SolMuseum', version=_sm_version)
+        return m
 
     # ------------------------------------------------------------------
     def _mdl_legacy(self, dx, dt, method, fault_type,

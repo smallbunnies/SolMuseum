@@ -1,11 +1,13 @@
 from Solverz import Eqn, Ode, Param, Model, Saturation, AntiWindUp
 from Solverz import Var
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 import numpy as np
 from warnings import warn
 
 from SolMuseum.dae.synmach import synmach
 from SolMuseum.util import rename_mdl
+from SolMuseum._version import __version__ as _sm_version
 
 
 class st:
@@ -109,5 +111,9 @@ class st:
         m.temp_control2 = Eqn('temp_control2', m.kp * (m.TREF - m.Ts) + m.ki * m.mu1 - m.mu)
 
         m = rename_mdl(m, name)
+
+        # overwrite=False keeps the synmach sub-model's stamps; only the
+        # st-specific equations get the st component stamp.
+        stamp_source(m, component='st', package='SolMuseum', version=_sm_version)
 
         return m

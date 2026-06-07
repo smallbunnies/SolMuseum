@@ -3,10 +3,12 @@ import sympy as sp
 from scipy.sparse import csc_array
 from Solverz import Eqn, Param, Model, TimeSeriesParam, Var, Abs, heaviside, exp, Sign
 from Solverz import Idx, LoopEqn, LoopOde, Sum, Set
+from Solverz import stamp_source
 from Solverz.utilities.type_checker import is_number
 from SolUtil import DhsFlow, DhsFaultFlow
 
 from SolMuseum.pde import heat_pipe
+from SolMuseum._version import __version__ as _sm_version
 from warnings import warn
 
 
@@ -37,8 +39,11 @@ class heat_network:
         ``Tsp_{j}`` Var names on the solution side.
         """
         if loopeqn:
-            return self._mdl_loopeqn(dx, dt, method, dynamic_slack)
-        return self._mdl_legacy(dx, dt, method, dynamic_slack)
+            m = self._mdl_loopeqn(dx, dt, method, dynamic_slack)
+        else:
+            m = self._mdl_legacy(dx, dt, method, dynamic_slack)
+        stamp_source(m, component='heat_network', package='SolMuseum', version=_sm_version)
+        return m
 
     # ------------------------------------------------------------------
     # Legacy per-pipe Var expansion (original heat_network path).
@@ -615,8 +620,11 @@ class fault_heat_network:
             leakage_diameter=None,
             loopeqn=True):
         if loopeqn:
-            return self._mdl_loopeqn(dx, dt, method, leakage_diameter)
-        return self._mdl_legacy(dx, dt, method, leakage_diameter)
+            m = self._mdl_loopeqn(dx, dt, method, leakage_diameter)
+        else:
+            m = self._mdl_legacy(dx, dt, method, leakage_diameter)
+        stamp_source(m, component='fault_heat_network', package='SolMuseum', version=_sm_version)
+        return m
 
     def _mdl_legacy(self, dx, dt, method, leakage_diameter):
         dff = self.dff
